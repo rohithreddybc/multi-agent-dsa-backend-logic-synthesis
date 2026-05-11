@@ -49,11 +49,11 @@
 
 ## Key empirical findings (for submission cover letter)
 
-1. **Execution feedback dominates at 7B scale.** Single-retry (83.3%) > Multi-Full (76.7%) on internal-30 — the paper reports this honestly and discusses the implication.
-2. **Graph category benefits most from multi-agent decomposition.** Multi-Full +15.7 pp over one-shot on graph problems.
-3. **Removing the Planner improves overall accuracy** (80.0% vs 76.7%) — strategy hints from a 7B planner introduce noise; an interesting negative result.
-4. **DeepSeek cross-model results validate the framework.** DeepSeek-MF graph accuracy: 80.0% vs DeepSeek-SO: 57.5% (+22.5 pp) — the multi-agent framework's value grows with stronger base models.
-5. **Zero test-source inflation.** All 614 trial records used deterministic tests; LLM-generated-test fallback was not triggered on any benchmark.
+1. **On internal-30, the three primary conditions (SO, SR, MF) are statistically indistinguishable** at $n{=}30$: paired Wilcoxon $p{=}0.59$ (MF vs SO), $p{=}0.31$ (MF vs SR), $p{=}0.08$ (SR vs SO). All 95% bootstrap CIs on pairwise mean differences include zero. The paper reports this honestly rather than asserting a confident ordering.
+2. **Cross-model graph result is the strongest positive signal.** Under DeepSeek-Coder-V2-Lite, graph-category accuracy improves +22.5 pp from SO→MF (57.5% → 80.0%), supporting a scaling hypothesis: the value of multi-agent decomposition grows with base-model capability.
+3. **HumanEval shows directional MF > SO** (+3.1 pp, $n{=}64$).
+4. **Planner-removal ablation** produces the highest aggregate accuracy in our 2-trial runs (80.0% vs 76.7% baseline) — reported as a hypothesis (strategy-seed sensitivity at 7B scale), not a confirmed finding.
+5. **Zero test-source inflation.** All 614 trial records used deterministic tests; the LLM-generated-test fallback was not triggered on any benchmark.
 
 ---
 

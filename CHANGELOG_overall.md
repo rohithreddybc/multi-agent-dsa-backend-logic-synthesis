@@ -1,5 +1,32 @@
 # Overall change log — IEEE Access revision
 
+## Revision 7 — Statistical tests + Introduction reframe (2026-05-11)
+
+### Paired statistical tests computed and integrated
+- Ran paired Wilcoxon signed-rank, McNemar, and 2000-iteration bootstrap-CI tests on internal-30 (n=30 problems) for the three primary pairwise comparisons.
+- **None reaches α=0.05**: MF vs SO p=0.592 (CI [-10.0, +17.3]pp), MF vs SR p=0.312 (CI [-19.3, +6.0]pp), SR vs SO p=0.083 (CI [+0.0, +23.3]pp).
+- Per-category Wilcoxon p-values also all far from significance (DP=0.250, GRAPH=0.875, DS=0.109 for SR→MF).
+
+### `build_tables.py` updates
+- `_table_category` extended with a "$p_{SR \to MF}$" column alongside the existing $p_{SO \to MF}$ column. Both are now visible in Table 4.
+- **Stub-write logic fixed**: tables (tab7, tab8, tab9, tab10, tab12) that are filled by hand from specialized run directories are no longer overwritten with stubs on every regeneration. The script now only writes a stub when the file is missing.
+
+### Paper rewrites
+- **Abstract**: Removed the unsupported "SR (83.3%) outperforms MF (76.7%)" claim. Now states all three conditions are statistically indistinguishable on internal-30, with HumanEval +3.1pp and DeepSeek graph +22.5pp as the load-bearing positive signals.
+- **Introduction Contribution #1**: Reframed from "framework that improves correctness" to "framework that **decouples role-decomposition from execution feedback**, enabling controlled measurement of each lever's marginal contribution within a single codebase and evaluation harness." This is the system/methodology contribution the data actually support.
+- **§V.B Headline comparison**: Added a sentence noting per-category Wilcoxon p-values fail to reach α=0.05 (test underpowered at n=10/category) and pointing the reader to the pooled-n=30 analysis in §VI.A.
+- **§VI.A Discussion**: Replaced "Execution Feedback vs.\ Multi-Agent Decomposition" subsection with three new subsections: (1) "Statistical Significance: What the Data Do and Do Not Support" — leads with the formal stat-test results including a new Table~\ref{tab:paired_stats}; (2) "External Validity and Scaling Hypothesis" — DeepSeek result as the strongest positive signal, introduces the scaling hypothesis; (3) "Practical Recommendation" — when SR vs MF actually matters.
+- **New Table 14 (paired_stats)**: Inline 3-row table reporting n, mean delta, bootstrap 95% CI, and Wilcoxon p for each pairwise comparison.
+
+### Verification
+- `latexmk -pdf main.tex` → 13 pages, clean compile, no float overflows, no undefined references.
+- Grep audit confirms all remaining instances of "outperform" / "76.7%" / "80.0%" are inside statistically-qualified sentences.
+
+### Deferred
+- 32B-model run via free API tier (Together / DeepInfra / Hyperbolic). Once run, the scaling hypothesis can be formally tested rather than asserted.
+
+---
+
 ## Revision 6 — Experiment completion + full paper finalization (2026-05-11)
 
 ### Grid completed

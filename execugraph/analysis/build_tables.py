@@ -109,16 +109,23 @@ def _table_category(records: list[dict[str, Any]]) -> str:
         cell_sr = _fmt_pct(mean(means["single-retry"])) if means.get("single-retry") else TODO
         cell_mf = _fmt_pct(mean(means["multi-full"])) if means.get("multi-full") else TODO
         if means.get("single-oneshot") and means.get("multi-full"):
-            stat = paired_compare(cat_records, a="single-oneshot", b="multi-full")
-            p_str = _fmt_p(stat.wilcoxon_p)
+            stat_so_mf = paired_compare(cat_records, a="single-oneshot", b="multi-full")
+            p_so_mf = _fmt_p(stat_so_mf.wilcoxon_p)
         else:
-            p_str = TODO
-        rows.append(f"{cat.upper()} & {cell_so} & {cell_sr} & {cell_mf} & {p_str} " + r"\\")
+            p_so_mf = TODO
+        if means.get("single-retry") and means.get("multi-full"):
+            stat_sr_mf = paired_compare(cat_records, a="single-retry", b="multi-full")
+            p_sr_mf = _fmt_p(stat_sr_mf.wilcoxon_p)
+        else:
+            p_sr_mf = TODO
+        rows.append(
+            f"{cat.upper()} & {cell_so} & {cell_sr} & {cell_mf} & {p_so_mf} & {p_sr_mf} " + r"\\"
+        )
     body = "\n".join(rows)
     return (
-        r"\begin{tabular}{@{}lrrrr@{}}" "\n"
+        r"\begin{tabular}{@{}lrrrrr@{}}" "\n"
         r"\toprule" "\n"
-        r"Category & SO & SR & MF & Wilcoxon $p$ (SO vs MF) \\" "\n"
+        r"Category & SO & SR & MF & $p_{\text{SO}\!\to\!\text{MF}}$ & $p_{\text{SR}\!\to\!\text{MF}}$ \\" "\n"
         r"\midrule" "\n"
         f"{body}\n"
         r"\bottomrule" "\n"
@@ -242,9 +249,12 @@ def main(argv: list[str] | None = None) -> int:
     (args.out / "tab6_cost.tex").write_text(_table_cost(records), encoding="utf-8")
     (args.out / "tab11_errortax.tex").write_text(_table_errortax(records), encoding="utf-8")
     # The remaining ablation / retry-sweep / external / cross-model / test-source tables
-    # require their own runs; emit stubs until those run dirs exist.
+    # are populated by hand from specialized run directories (e4_*, e5_*, e7_*, etc.).
+    # Only emit a stub when the file is missing — never overwrite existing real data.
     for stub in ("tab7_ablation", "tab8_retry_sweep", "tab9_external", "tab10_crossmodel", "tab12_testsource"):
-        (args.out / f"{stub}.tex").write_text(_stub_one_col(), encoding="utf-8")
+        stub_path = args.out / f"{stub}.tex"
+        if not stub_path.exists():
+            stub_path.write_text(_stub_one_col(), encoding="utf-8")
     print(f"wrote tables to {args.out}")
     return 0
 
