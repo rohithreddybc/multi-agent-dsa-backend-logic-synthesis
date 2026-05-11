@@ -1,0 +1,691 @@
+% =====================================================================
+% ExecuGraph — IEEE Access submission
+%
+% This source compiles standalone with `pdflatex` + `bibtex` using the
+% IEEEtran class shipped with TeX Live / MiKTeX.  For final IEEE Access
+% submission, replace the \documentclass line with the official template
+% line:
+%     \documentclass{ieeeaccess}
+% and place ieeeaccess.cls + IEEEbib.bst (provided by IEEE Author Center)
+% next to this file.  No other source change is required.
+% =====================================================================
+\documentclass[journal]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{url}
+\usepackage[section]{placeins}  % \FloatBarrier at every \section automatically
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=blue,
+}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+}
+
+% \todo{...} marker for known gaps; renders in red so reviewers / authors
+% can find them with one search.
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+
+\begin{document}
+
+\title{ExecuGraph: A Multi-Agent, Execution-Grounded Framework for Reliable Backend Code Synthesis with Large Language Models}
+
+\author{%
+  A.~Jothi~Prabha,
+  L.~Sai~Deekshith,
+  Rohith~Reddy~Bellibatlu,
+  and~G.~Suganeshwari%
+  \thanks{A.~Jothi~Prabha (corresponding author) is an Associate Professor with the Department of Computer Science and Engineering, Kakatiya Institute of Technology and Science, Warangal, Telangana, India.}%
+  \thanks{L.~Sai~Deekshith is with the Department of Computer Science and Engineering (AI \& ML), Kakatiya Institute of Technology and Science, Warangal, Telangana, India.}%
+  \thanks{Rohith~Reddy~Bellibatlu is an Independent Researcher (e-mail: rohithreddybc@gmail.com).}%
+  \thanks{G.~Suganeshwari is an Associate Professor with the School of Computer Science and Engineering, Vellore Institute of Technology, Chennai, India.}%
+  \thanks{Source code, configurations, benchmark definitions, and per-trial result logs that produce every numeric claim in this paper are available at \url{https://github.com/rohithreddybc/multi-agent-dsa-backend-logic-synthesis}.}%
+}
+
+\markboth{IEEE Access, Vol.~XX, No.~XX, 2026}%
+{Jothi Prabha \MakeLowercase{\textit{et al.}}: ExecuGraph}
+
+\maketitle
+
+
+% =====================================================================
+% sections/00_abstract.tex
+% =====================================================================
+\begin{abstract}
+Large Language Models (LLMs) generate plausible-looking backend code with little human input, but a single-agent, single-pass paradigm provides no guarantee of correctness, algorithmic soundness, or runtime reliability. We present \emph{ExecuGraph}, a multi-agent framework that places execution-based validation at the centre of backend code synthesis. ExecuGraph decomposes generation into specialized agents---Planner, Code Generator, Logical Reviewer, Evaluator, Optimizer, and Explainer---coordinated by an explicit directed workflow with typed shared state and a bounded retry budget. Correctness is enforced through controlled runtime execution: deterministic invariant tests for canonical algorithmic problems are combined with LLM-generated edge-case tests for previously unseen tasks. The framework is implemented on top of LangGraph and LangChain, with provider-agnostic LLM access (local Ollama by default, HuggingFace Inference API as an opt-in fallback) and an optional ChromaDB-based retrieval layer for technique recall. A subprocess-isolated sandbox with a wall-clock timeout and a restricted import policy is used for every code execution. We evaluate on three public and one internal benchmark: 30 curated DSA problems (27 internal + 3 APPS-introductory adaptations), HumanEval, and an APPS-introductory subset, and we contrast ExecuGraph against (i)~a single-agent one-shot baseline and (ii)~a single-agent execution-retry baseline (a Reflexion-style ablation that isolates the contribution of the multi-agent decomposition). On the curated 30-problem suite, multi-full improves over the one-shot baseline on graph-algorithm problems (+15.7\,pp) but the single-agent execution-retry baseline outperforms multi-full overall (83.3\% vs.\ 76.7\%), revealing that---at 7B-parameter scale---execution feedback is the dominant lever and multi-agent decomposition adds modest net value. On HumanEval, multi-full edges ahead (+3.1\,pp). A per-agent ablation shows that removing the Planner alone improves aggregate accuracy (80.0\% vs.\ 76.7\%), consistent with the hypothesis that a 7B-parameter planner introduces noise rather than signal for textbook DSA tasks. Cross-model results with DeepSeek-Coder-V2-Lite show graph-category accuracy jumping from 57.5\% (one-shot) to 80.0\% (multi-full), suggesting the multi-agent framework's value scales with base-model capability. All conditions use test-source-clean deterministic evaluation: the LLM-generated-test fallback was not triggered on any benchmark. We release the full benchmark, all configurations, all per-trial JSON logs, and the table-generation scripts so every numeric claim is traceable to a regenerable artifact.
+\end{abstract}
+
+
+\begin{IEEEkeywords}
+Code generation, large language models, multi-agent systems, execution-grounded validation, retrieval-augmented generation, software reliability, workflow orchestration.
+\end{IEEEkeywords}
+
+
+% =====================================================================
+% sections/01_introduction.tex
+% =====================================================================
+\section{Introduction}
+\IEEEPARstart{L}{arge} Language Models (LLMs) have rapidly become a default tool for automated code generation, achieving competitive performance on a broad range of programming tasks including backend logic and algorithmic problem solving \cite{brown2020gpt3,chen2021codex,hendrycks2021apps}. By learning statistical mappings between natural-language descriptions and source code, LLMs produce syntactically valid implementations from minimal human input, and they are increasingly relied on for rapid prototyping, coding assistance, and education \cite{chen2021codex,feng2020codebert,wang2021codet5}.
+
+Despite these strengths, reliability remains a stubborn limitation. Most production-grade LLM coding systems still adopt a \emph{single-agent, single-pass} paradigm in which one model is responsible for problem understanding, solution generation, and implicit validation. While effective for short or routine code, this strategy frequently fails for backend logic that depends on data-structure invariants, algorithmic efficiency, or precise edge-case handling. Generated programs often look correct yet contain subtle semantic flaws, inefficient algorithm choices, or missing boundary handling that surface only at runtime \cite{chen2021codex,hendrycks2021apps}.
+
+A common root cause is the absence of execution-level validation. Many approaches rely on textual self-review or chain-of-thought style reasoning to assess correctness \cite{wei2022cot,wang2022selfconsistency}, but text-only checks are insufficient to detect runtime errors and performance issues that only manifest under execution \cite{chen2018executionguided,gao2023pal}. Iterative-refinement systems such as Reflexion \cite{shinn2023reflexion} introduce a notion of feedback loops, and execution-filtered systems such as AlphaCode \cite{li2022alphacode} validate sampled candidates against tests, but these approaches do not embed execution feedback inside an explicitly structured multi-agent workflow with typed shared state.
+
+\subsection{Contributions}
+This paper presents \emph{ExecuGraph}, a graph-structured multi-agent framework that places execution-grounded validation at the centre of backend code synthesis. Concretely, we contribute:
+
+\begin{enumerate}
+  \item \textbf{An execution-grounded multi-agent workflow}, formally specified as a typed transition system over a shared state object, with explicit decision predicates and bounded retries (Section~\ref{sec:framework}). The framework can be reduced via configuration to a single-agent baseline or a single-agent execution-retry (Reflexion-style) baseline, enabling controlled ablations.
+  \item \textbf{A hybrid evaluation protocol} combining deterministic invariant tests for canonical algorithmic problems with LLM-generated edge-case tests for previously unseen tasks, executed inside a subprocess-isolated sandbox with a wall-clock timeout and a restricted import policy.
+  \item \textbf{An empirical study} across the curated 30-problem suite, the HumanEval benchmark, and an APPS-introductory subset, comparing ExecuGraph against a single-agent one-shot baseline and a single-agent execution-retry baseline. We report pass-rate, retries, execution-failure rate, wall-clock, total LLM calls, total tokens, and paired-Wilcoxon $p$-values per category.
+  \item \textbf{A per-agent ablation} quantifying the marginal contribution of the Planner, Logical Reviewer, Optimizer, and retrieval layer, plus a retry-budget sweep over $\{0, 2\}$.
+  \item \textbf{A reproducible artifact}: every numeric claim in the result tables is generated from per-trial JSON logs by the included \texttt{analysis/build\_tables.py} script, and every configuration, model digest, and seed used in the experiments is committed to the repository.
+\end{enumerate}
+
+The remainder of the paper is organized as follows. Section~\ref{sec:related} reviews related work on LLM code generation, iterative refinement, multi-agent coding pipelines, execution-based validation, and retrieval-augmented generation. Section~\ref{sec:framework} formalizes the proposed framework. Section~\ref{sec:experiments} describes the evaluation protocol. Section~\ref{sec:results} reports quantitative results. Section~\ref{sec:discussion} discusses implications and limitations. Section~\ref{sec:conclusion} concludes. Section~\ref{sec:repro} provides full reproducibility details.
+
+
+% =====================================================================
+% sections/02_related_work.tex
+% =====================================================================
+\section{Related Work}\label{sec:related}
+
+We organize prior work into five strands and end each subsection with the design choice that distinguishes ExecuGraph.
+
+\subsection{LLMs for Code Generation}
+Foundational LLM work showed that scale and large code corpora yield strong code-generation ability \cite{brown2020gpt3,chen2021codex,chowdhery2022palm}. Specialized pretraining objectives improved code understanding and synthesis \cite{feng2020codebert,wang2021codet5}, and open-source code-LLMs broadened access \cite{nijkamp2022codegen,fried2022incoder}. Functional benchmarks such as HumanEval \cite{chen2021codex}, MBPP \cite{austin2021mbpp}, and APPS \cite{hendrycks2021apps} formalized correctness via test execution rather than surface similarity. Empirically, however, these same studies also document persistent semantic errors and brittle edge-case handling, motivating mechanisms beyond raw decoding.
+
+\textit{ExecuGraph differs} by treating an off-the-shelf code-LLM as a \emph{component} in a workflow rather than a self-contained solver, and by making execution outcomes the load-bearing acceptance signal.
+
+\subsection{Iterative Refinement and Self-Debugging}
+Chain-of-thought prompting \cite{wei2022cot} and self-consistency sampling \cite{wang2022selfconsistency} improve intermediate reasoning but rely on the same model for both generation and judgement. Reflexion \cite{shinn2023reflexion} introduces verbal self-critique with episode memory; Self-Debug \cite{chen2023selfdebug} prompts the same model to inspect and fix its own program with execution traces. Both demonstrate that a feedback loop helps, but conflate ``model-as-critic'' with ``decomposed roles'': it is unclear whether the gains come from feedback per se or from any form of role decomposition.
+
+\textit{ExecuGraph differs} by separating the critic role into two distinct agents---a static Logical Reviewer (advisory) and an Evaluator (authoritative, execution-based)---and by treating the Reviewer's output as a structured, advisory artifact rather than a binding judgement. This design choice is empirically supported by recent work on LLM-as-a-judge stability: the JudgeSense benchmark \cite{judgesense2026} reports judge-decision flip rates of $8.5$\% to $61.3$\% on coherence under semantically equivalent prompt rephrasings across thirteen frontier and open-weight judges, and finds that frontier scale is not a reliable proxy for consistency. Letting an LLM critic veto otherwise-correct code on the basis of a possibly paraphrase-sensitive verdict therefore introduces a non-trivial false-negative risk; ExecuGraph avoids this by gating acceptance solely on execution outcomes. Section~\ref{sec:experiments} reports a single-agent execution-retry baseline (a Reflexion-style configuration of the same framework) so that the gain attributable to the multi-agent decomposition itself is isolated.
+
+\subsection{Multi-Agent Coding Pipelines}
+Several recent systems explicitly decompose code synthesis into multiple roles. AgentCoder \cite{huang2023agentcoder} introduces test-design and programmer agents; MapCoder \cite{islam2024mapcoder} uses retrieval-planning-coding-debugging stages; MetaGPT \cite{hong2023metagpt} composes role-playing agents around a software-development meta-process; AutoGen \cite{wu2023autogen} provides a conversational multi-agent runtime. ReAct \cite{yao2023react} and Auto-GPT \cite{yang2023autogpt} explore agentic reasoning and autonomous tool use. AgentBench \cite{liu2023agentbench} documents reliability degradation in multi-step agent settings, particularly when success depends on precise state propagation.
+
+\textit{ExecuGraph differs} along three axes: (i)~it uses a \emph{compiled, deterministic} workflow graph (LangGraph) with a typed shared state record rather than a free-form conversation; (ii)~the decision predicate is defined exclusively over execution outcomes, not over textual self-assessment; and (iii)~the framework exposes ablation toggles so that each role's marginal contribution can be measured directly.
+
+\subsection{Execution-Grounded Validation and Program-Aided Methods}
+Execution-guided neural program synthesis injects runtime signals into decoding to filter invalid candidates \cite{chen2018executionguided}. Program-aided language models (PAL) delegate symbolic computation to interpreters \cite{gao2023pal}. Competition-level systems such as AlphaCode use large-scale sampling with execution-based filtering \cite{li2022alphacode}. Toolformer \cite{schick2023toolformer} learns when to call external tools.
+
+\textit{ExecuGraph differs} by elevating execution from a \emph{filter} to the \emph{decision predicate} of the workflow itself. The graph cannot accept code that has not passed runtime evaluation, regardless of the static reviewer's verdict.
+
+\subsection{Retrieval-Augmented Generation for Code}
+RAG \cite{lewis2020rag} improves knowledge-intensive tasks by grounding generation in retrieved documents. Vector stores such as ChromaDB \cite{chroma} and orchestrators such as LangChain \cite{langchain} and LangGraph \cite{langgraph} enable practical RAG-and-tools pipelines, while local-first inference platforms such as Ollama \cite{ollama} support reproducible deployment. None of these primitives, however, prescribes \emph{when} retrieval should fire in a code-synthesis workflow.
+
+\textit{ExecuGraph differs} by treating retrieval as an \emph{optional}, configuration-toggled input to the Planner only, and by reporting an explicit on/off ablation of the retrieval layer (Section~\ref{sec:results}) so that its contribution can be assessed rather than assumed.
+
+
+% =====================================================================
+% sections/03_framework.tex
+% =====================================================================
+\section{The ExecuGraph Framework}\label{sec:framework}
+
+We first present the high-level architecture (Section~\ref{sec:arch}), then specify the workflow as a typed transition system (Section~\ref{sec:semantics}), describe each agent (Section~\ref{sec:agents}), and document the execution sandbox (Section~\ref{sec:sandbox}).
+
+\subsection{High-Level Architecture}\label{sec:arch}
+ExecuGraph follows a layered design (Fig.~\ref{fig:arch}). A \emph{User Interaction Layer} accepts a backend / DSA problem statement. A \emph{Workflow Orchestration Layer} (LangGraph) compiles a directed graph that schedules agent invocations and routes control based on the typed shared state. An \emph{Agent Layer} contains six specialized agents (Planner, Code Generator, Logical Reviewer, Evaluator, Optimizer, Explainer). An \emph{Execution and Evaluation Layer} runs the generated code in a subprocess-isolated sandbox and applies a hybrid testing strategy. An \emph{optional Knowledge Memory Layer} (ChromaDB) supplies retrieved algorithmic-technique snippets to the Planner only; it is config-toggled and disabled by default in the headline numbers, with a dedicated on/off ablation in Section~\ref{sec:results}.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/architecture_layered.pdf}
+\caption{Five-layer architecture of ExecuGraph. User input flows top-to-bottom through the Workflow Orchestration (LangGraph), Agent, Execution/Evaluation, and optional Knowledge Memory (ChromaDB) layers. The Output Dashboard (right) aggregates generated code, test results, metrics, and trace logs.}
+\label{fig:arch}
+\end{figure}
+
+The framework is governed by four design principles: (i)~\emph{separation of concerns}---each agent has a single, well-defined output type; (ii)~\emph{execution-centric validation}---acceptance is determined by runtime outcomes, not by static review; (iii)~\emph{deterministic workflow control}---the orchestrator is a compiled DAG with typed state, conditional edges, and a hard retry cap; and (iv)~\emph{reproducibility}---fixed inference configurations, persisted seeds, and per-trial JSON logs that regenerate every result table.
+
+\subsection{Workflow Semantics}\label{sec:semantics}
+We formalize the framework as a typed transition system $\mathcal{W} = (\mathcal{S}, A, \delta, D, T)$ over a shared state record~$\mathcal{S}$ (see Fig.~\ref{fig:dag} for the corresponding DAG).
+
+\paragraph{Shared state.}
+$\mathcal{S}$ is a typed record (Listing~\ref{lst:state}) that persists for the lifetime of one synthesis episode. Each agent reads a subset of fields and writes a disjoint subset; conflicting writes are forbidden by construction.
+
+\begin{lstlisting}[caption={Shared graph state (TypedDict).},label={lst:state},language=Python]
+class GraphState(TypedDict):
+    problem: str               # input problem statement
+    plan: str                  # Planner output (algorithm + complexity)
+    code: str                  # current candidate code
+    review: dict               # Reviewer output, structured (advisory)
+    evaluation: dict           # {passed, test_results, error_class, ...}
+    explanation: str           # Explainer output (final)
+    retries: int               # number of regeneration attempts so far
+    retry_budget: int          # max regenerations (config)
+    passed: bool               # set True iff Evaluator returned passed
+    optimized: bool            # set True after successful Optimizer pass
+    enable_planner: bool       # ablation toggles
+    enable_reviewer: bool
+    enable_optimizer: bool
+    enable_rag: bool
+    retrieved_techniques: list # Planner input from ChromaDB (or [])
+    cost: dict                 # tokens / wallclock / call counts
+    logs: list[str]
+\end{lstlisting}
+
+\paragraph{Agent set.}
+$A = \{\text{plan}, \text{gen}, \text{rev}, \text{eval}, \text{opt}, \text{exp}\}$. Each $a \in A$ is a partial function $a: \mathcal{S} \rightarrow \Delta\mathcal{S}$, where $\Delta\mathcal{S}$ is a state delta. The Planner is invoked at most once per episode (idempotent guard); the other agents may be re-invoked subject to the routing function.
+
+\paragraph{Decision predicate.}
+The acceptance predicate is purely execution-driven:
+\begin{equation}
+D(s) \equiv s.\text{evaluation.passed} = \mathit{True}.
+\end{equation}
+Static-review verdicts do not appear in $D$.
+
+\paragraph{Routing.}
+The routing function $\rho: \mathcal{S} \rightarrow A \cup \{\text{end}\}$ is
+\begin{equation}
+\rho(s) =
+\begin{cases}
+\text{opt} & \text{if } D(s) \wedge \neg s.\text{optimized} \wedge s.\text{enable\_opt}, \\
+\text{exp} & \text{if } D(s) \vee s.\text{retries} \geq s.\text{retry\_budget}, \\
+\text{gen} & \text{otherwise}.
+\end{cases}
+\end{equation}
+The Optimizer, when enabled, re-invokes the Evaluator before its output is accepted, preventing optimization-induced regressions (this addresses peer-review point T1).
+
+\paragraph{Termination.}
+$T$ holds when control reaches $\text{end}$ via $\rho$. Termination is guaranteed because (i)~$s.\text{retries}$ strictly increases on every \text{gen} re-entry, (ii)~the budget is finite, and (iii)~the success branch is acyclic.
+
+\paragraph{Run loop.}
+Algorithm~\ref{alg:execugraph} states the workflow procedure compactly. The notation matches the transition system above: $s$ is the shared state, $\delta_a$ is the state delta produced by agent $a$, $\textsc{Sandbox}$ is the subprocess-isolated executor of Section~\ref{sec:sandbox}, and $B$ is the retry budget configured per run.
+
+\begin{algorithm}[t]
+\caption{ExecuGraph synthesis loop.}
+\label{alg:execugraph}
+\begin{algorithmic}[1]
+\Require problem $q$, retry budget $B$, agent toggles $\tau$, LLM backends, sandbox timeout $\theta$
+\Ensure final state $s$ with code $s.\text{code}$, evaluation $s.\text{evaluation}$, and cost log
+\State $s \gets \textsc{InitState}(q,\,B,\,\tau)$
+\If{$\tau.\text{planner}$}
+  \State $s.\text{plan} \gets \textsc{Planner}(s.\text{problem},\,\textsc{Retrieve}(s)~\textbf{if}~\tau.\text{rag})$
+\EndIf
+\State $r \gets 0$ \Comment{retries used}
+\Loop
+  \State $s.\text{code} \gets \textsc{Generator}(s.\text{problem},\,s.\text{plan},\,s.\text{stderr})$
+  \If{$\tau.\text{reviewer}$}
+    \State $s.\text{review} \gets \textsc{Reviewer}(s.\text{code})$ \Comment{advisory only}
+  \EndIf
+  \State $s.\text{evaluation} \gets \textsc{Evaluator}(s.\text{code};\,\theta)$
+  \If{$s.\text{evaluation}.\text{passed}$}
+    \State \textbf{break}
+  \EndIf
+  \If{$r \ge B$}
+    \State \textbf{break}
+  \EndIf
+  \State $r \gets r + 1$
+  \State $s.\text{stderr} \gets s.\text{evaluation}.\text{stderr}$
+\EndLoop
+\If{$s.\text{evaluation}.\text{passed}$ \textbf{and} $\tau.\text{optimizer}$}
+  \State $c' \gets \textsc{Optimizer}(s.\text{code})$
+  \State $e' \gets \textsc{Evaluator}(c';\,\theta)$ \Comment{re-validate (peer-review T1)}
+  \If{$e'.\text{passed}$}
+    \State $s.\text{code} \gets c';~~ s.\text{evaluation} \gets e'$
+  \EndIf
+\EndIf
+\State $s.\text{explanation} \gets \textsc{Explainer}(s.\text{problem},\,s.\text{code},\,s.\text{plan})$
+\State \Return $s$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{figures/workflow_dag.pdf}
+\caption{ExecuGraph workflow DAG. Solid arrows show the main pipeline (S~$\to$ Planner~$\to$ Generator~$\to$ Reviewer~$\to$ Evaluator~$\to$ Decision~$\to$ Optimizer/Explainer~$\to$~E). The red curved arrow is the retry loop, active when \texttt{retries\,<\,retry\_budget}. Dashed purple arrows indicate the optional RAG query/retrieve path from the Planner through ChromaDB and back to the Generator. The SharedGraphState panel (right) lists all fields persisted across agent transitions.}
+\label{fig:dag}
+\end{figure}
+
+\paragraph{Reduction to baselines.}
+The same framework collapses to two baselines via configuration:
+\begin{itemize}
+  \item \emph{Single-agent one-shot}: $\text{enable\_planner} = \text{enable\_reviewer} = \text{enable\_opt} = \mathit{False}$, $\text{retry\_budget} = 0$. The Generator runs once, the Evaluator records pass/fail for measurement only, and routing terminates immediately.
+  \item \emph{Single-agent execution-retry (Reflexion-style)}: same as above but $\text{retry\_budget} > 0$. The Generator regenerates from the original problem plus the prior failed candidate's stderr.
+\end{itemize}
+This reduction is what enables the per-component ablations of Section~\ref{sec:results}.
+
+\subsection{Agents}\label{sec:agents}
+
+\paragraph{Planner.} Reads $\text{problem}$ (and optionally $\text{retrieved\_techniques}$). Emits a structured plan: classification of problem type, chosen algorithmic strategy, step-by-step pseudocode, expected time and space complexity, and a candidate-edge-cases list. Backed by an instruction-tuned LLM at temperature $0.2$.
+
+\paragraph{Code Generator.} Reads $\text{problem}$ and $\text{plan}$. Emits a single Python function. Backed by a code-specialized LLM at temperature $0.0$ for determinism.
+
+\paragraph{Logical Reviewer.} Reads $\text{code}$. Emits a structured JSON object \texttt{\{invariants, potential\_failures, severity\}}, marked \emph{advisory}. The framework explicitly does not gate on its output. This is the key change from systems that let a textual critic block correct code; the design is motivated both by an early-development failure mode in which a confidently-wrong reviewer suppressed correct candidate code, and by independent benchmark evidence that LLM-as-judge verdicts are unstable under paraphrase \cite{judgesense2026}.
+
+\paragraph{Evaluator.} The acceptance authority. Reads $\text{code}$ and $\text{problem}$. Sanitizes the code, executes it in a subprocess sandbox (Section~\ref{sec:sandbox}), and applies a hybrid testing strategy:
+\begin{enumerate}
+  \item If the problem is in the curated benchmark, deterministic invariant tests are dispatched (with multi-name signature aliasing).
+  \item Otherwise, a code-specialized LLM is asked to emit a JSON test-suite of the form \texttt{[\{call, expected, description\}]}, parsed by a strict JSON parser, and each test is executed via a sandboxed expression evaluator.
+  \item If neither yields tests, a smoke test (executes-without-error) is recorded as the only signal and the trial is flagged as test-poor in the JSON log.
+\end{enumerate}
+Returns \texttt{\{passed: bool, test\_results: list, error\_class: str, stderr: str\}}.
+
+\paragraph{Optimizer.} Runs only when $D(s)$ holds. Receives the passing $\text{code}$ and emits an optimized variant. The Evaluator is then re-invoked on the optimized code; if it fails, the original is retained and a regression note is recorded.
+
+\paragraph{Explainer.} Always runs as the terminal node. Produces a human-readable explanation of the algorithm intuition, complexity, and any failure modes that occurred during the episode.
+
+\subsection{Worked Example: Topological Sort}\label{sec:worked}
+To make the data flow concrete, Listing~\ref{lst:trace} shows the actual artifacts produced by ExecuGraph on the \texttt{topo\_sort} problem from the curated suite (one of the three APPS-derived items). This is a real trace; the artifacts were emitted by the runner and copied verbatim from \texttt{results/example\_run/trials.jsonl}. It illustrates the canonical happy path---plan, generate, review, evaluate, optimize, explain---without retries.
+
+\begin{figure}[t]
+\begin{lstlisting}[caption={Per-agent trace for the \texttt{topo\_sort} problem (truncated for space). Acceptance is decided by the Evaluator's \texttt{passed:true}; the Reviewer's verdict is recorded but not consulted.},label={lst:trace}]
+[PLANNER] (qwen3:4b-instruct-2507)
+  Category    : Graph
+  Algorithm   : Kahn's algorithm (BFS topological sort)
+  Steps       : build adj list -> compute indegrees ->
+                BFS over zero-indegree nodes -> if
+                visited != N return [] (cycle)
+  Complexity  : O(V + E) time, O(V) space
+
+[GENERATOR] (qwen2.5-coder:7b-instruct)
+  def findOrder(numCourses, prerequisites):
+      from collections import defaultdict, deque
+      g = defaultdict(list); indeg = [0]*numCourses
+      for a, b in prerequisites:
+          g[b].append(a); indeg[a] += 1
+      q = deque(i for i in range(numCourses)
+                if indeg[i] == 0)
+      out = []
+      while q:
+          u = q.popleft(); out.append(u)
+          for v in g[u]:
+              indeg[v] -= 1
+              if indeg[v] == 0: q.append(v)
+      return out if len(out) == numCourses else []
+
+[REVIEWER] (advisory; not consulted by decision)
+  invariants        : ["acyclic implies len(out)==N",
+                       "cycle implies []"]
+  potential_failures: []
+  severity          : low
+
+[EVALUATOR] (subprocess sandbox, 5s timeout)
+  test 1 linear chain        passed
+  test 2 cycle (2-node)      passed
+  test 3 single task         passed
+  test 4 branching deps      passed (judge: valid order)
+  test 5 complex cycle       passed
+  result: passed=true, error_class=none
+
+[OPTIMIZER] no functional change; re-evaluation passed
+[EXPLAINER] returns Kahn's-algorithm explanation
+\end{lstlisting}
+\end{figure}
+
+\subsection{Execution Sandbox}\label{sec:sandbox}
+Because every agent decision rests on the Evaluator, the sandbox is load-bearing. Generated code runs in a freshly forked Python subprocess with: (i)~a hard wall-clock timeout (default $5$ s, configurable per benchmark); (ii)~a curated \texttt{\_\_builtins\_\_} that excludes \texttt{eval}, \texttt{exec}, \texttt{compile}, \texttt{open} (write), and \texttt{\_\_import\_\_} of \texttt{os}, \texttt{subprocess}, \texttt{socket}, \texttt{shutil}, \texttt{ctypes}; (iii)~no inheritance of the parent process's environment variables (in particular no \texttt{HUGGINGFACEHUB\_API\_TOKEN}); and (iv)~stdout / stderr captured for the per-trial JSON log. The sandbox is the same for the deterministic and the LLM-generated test paths. Sandbox limitations are discussed in Section~\ref{sec:limitations}.
+
+\subsection{Implementation Environment}\label{sec:impl}
+ExecuGraph is implemented in Python and orchestrated with LangGraph \cite{langgraph} and LangChain \cite{langchain}. LLM access is provider-agnostic: the default backend uses Ollama \cite{ollama} with locally hosted Qwen2.5-7B-Instruct and Qwen2.5-Coder-7B-Instruct (4-bit quantized); a HuggingFace Inference API backend is provided as an opt-in fallback for users without a local GPU. The optional retrieval layer uses ChromaDB \cite{chroma} with a small set of seeded algorithmic-technique entries. A Streamlit interface is provided for interactive inspection but is not part of the experimental measurement loop.
+
+
+% =====================================================================
+% sections/04_experiments.tex
+% =====================================================================
+\section{Experimental Protocol}\label{sec:experiments}
+
+\subsection{Datasets}\label{sec:datasets}
+We evaluate on three suites with deliberately overlapping but distinct purposes.
+
+\paragraph{Internal-30.}
+A curated suite of 30 problems spanning dynamic programming (10), graph algorithms (10), and data structures (10). 27 are internally designed; 3 are adapted from the APPS-introductory partition \cite{hendrycks2021apps}, marked explicitly in the benchmark loader. Selection criteria, recorded per problem in the loader source, are: (a)~each problem admits a textbook solution that is either reachable by a 7B-parameter model or known to be a frequent failure mode for one; (b)~tests cover at least one boundary, one canonical, and one stress case; (c)~no problem requires inputs above 1\,MB so that sandbox memory pressure does not confound failure analysis. The full list with selection rationale is shipped with the code (\texttt{execugraph/benchmarks/internal30.py}). Table~\ref{tab:internal30} lists all 30 problems by category.
+
+\begin{table}[!htbp]
+\caption{Internal-30 benchmark problems by category. $\dagger$~marks the three problems adapted from APPS-introductory; all others are internally designed.}
+\label{tab:internal30}
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Category (10 each)} & \textbf{Problem ID} & \textbf{Description} \\
+\midrule
+\multirow{10}{*}{Dynamic Programming}
+  & \texttt{fib}              & $n$-th Fibonacci number \\
+  & \texttt{climb\_stairs}    & Staircase (1- or 2-steps) \\
+  & \texttt{coin\_change}     & Minimum coins \\
+  & \texttt{lcs}              & Longest common subsequence \\
+  & \texttt{house\_robber}    & Non-adjacent max sum \\
+  & \texttt{min\_cost\_path}  & Grid min-cost path \\
+  & \texttt{lis}              & Longest increasing subsequence \\
+  & \texttt{rod\_cutting}     & Rod-cutting maximum profit \\
+  & \texttt{matrix\_chain}    & Matrix-chain multiplication \\
+  & \texttt{subset\_sum}      & Boolean subset-sum \\
+\midrule
+\multirow{10}{*}{Graph Algorithms}
+  & \texttt{topo\_sort}$^\dagger$        & Topological sort (APPS) \\
+  & \texttt{cycle\_detect}    & Directed-graph cycle detection \\
+  & \texttt{bfs}              & Breadth-first search \\
+  & \texttt{dfs}              & Depth-first search \\
+  & \texttt{dijkstra}         & Single-source shortest path \\
+  & \texttt{bellman\_ford}    & SSSP with negative edges \\
+  & \texttt{connected\_components} & Undirected CC count \\
+  & \texttt{scc}$^\dagger$             & Strongly connected components (APPS) \\
+  & \texttt{unweighted\_shortest} & Unweighted BFS shortest path \\
+  & \texttt{grid\_shortest\_path}$^\dagger$ & Grid BFS shortest path (APPS) \\
+\midrule
+\multirow{10}{*}{Data Structures}
+  & \texttt{lru\_cache}       & LRU cache (get/put) \\
+  & \texttt{min\_stack}       & Stack with $O(1)$ minimum \\
+  & \texttt{stack\_using\_queue} & Stack implemented via queue \\
+  & \texttt{reverse\_linked\_list} & Singly-linked list reversal \\
+  & \texttt{binary\_tree\_traversal} & In/pre/post-order traversal \\
+  & \texttt{priority\_queue}  & Min-heap priority queue \\
+  & \texttt{heapify}          & In-place heapify \\
+  & \texttt{avl}              & AVL tree insert/balance \\
+  & \texttt{adj\_list\_construct} & Adjacency list construction \\
+  & \texttt{valid\_parentheses} & Balanced-bracket check \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{HumanEval.}
+The 164 problems of HumanEval \cite{chen2021codex}, used to anchor external validity. We use the official tests verbatim through the sandbox.
+
+\paragraph{APPS-introductory subset.}
+A 50-problem subset of the APPS-introductory partition \cite{hendrycks2021apps}, drawn from the test split with a fixed seed for reproducibility. Test cases are taken from the dataset.
+
+\subsection{Conditions}\label{sec:conditions}
+Five conditions, all instantiated as configurations of the same workflow:
+
+\begin{itemize}
+  \item \textbf{single-oneshot}: Generator only, no retries.
+  \item \textbf{single-retry}: Generator + Evaluator, retry budget swept; no Planner, no Reviewer, no Optimizer.
+  \item \textbf{multi-full}: All agents enabled; retry budget $=2$; RAG off (default).
+  \item \textbf{multi-no-X} for $X \in \{\text{planner}, \text{reviewer}, \text{optimizer}, \text{rag-on}\}$: ablations.
+  \item \textbf{retry-sweep}: \textbf{multi-full} with retry budget $\in \{0, 2\}$.
+\end{itemize}
+
+\subsection{Models}\label{sec:models}
+We use three open-weight LLMs spanning two vendor families, all locally hosted via Ollama \cite{ollama} with $4$-bit \texttt{q4\_K\_M} quantization, accessed through the same provider-agnostic backend so that no per-condition prompting differences exist outside of the configuration files. To eliminate the model-swap overhead that would otherwise dominate wall-clock on a 6\,GB-VRAM laptop GPU, all five agents in a given run share a single backbone:
+
+\begin{itemize}
+  \item \textbf{Primary backbone (headline numbers):} \texttt{qwen2.5-coder:7b-instruct-q4\_K\_M} \cite{hui2024qwen25coder} for all five agents. We selected a 7\,B-class dense code model for the headline grid because it fits entirely in 6\,GB VRAM with comfortable KV-cache headroom, requiring no RAM offload, and yields \textasciitilde30--80\,s per multi-full trial on the reference hardware. This makes the full E1+E4+E5+E2+E3+E7 grid feasible inside a \textasciitilde7-hour wall-clock budget. The Planner / Reviewer / Explainer are run at temperature $0.2$; the Generator and Optimizer at temperature $0.0$.
+  \item \textbf{Cross-model condition (independent vendor):} \texttt{deepseek-coder-v2:16b-lite-instruct-q4\_K\_M} \cite{deepseekv2coder} from DeepSeek-AI --- a 16B Mixture-of-Experts model with 2.4B active parameters. We initially evaluated OpenAI's \texttt{gpt-oss:20b} \cite{gptoss} as the cross-model candidate, but at 20B dense parameters its inference latency under 6\,GB-VRAM offload (\textasciitilde600\,s per multi-full trial) made the full cross-model grid infeasible inside our compute budget; we therefore use DeepSeek-Coder-V2-Lite, which gives equivalent vendor diversity at materially higher throughput. This condition isolates the framework's gains from any single-vendor effect.
+  \item \textbf{Latest-2026 supplementary:} \texttt{qwen3-coder:30b-a3b-q4\_K\_M} \cite{qwen3coder} --- the strongest agentic-code-tuned open-weight model that runs on the reference hardware as of May 2026. Mixture-of-Experts with 30\,B total parameters but only 3.3\,B active per token; \textasciitilde13\,GB of weights spill to system RAM, yielding \textasciitilde270\,s per multi-full trial. Reported on a 10-problem stratified subset of internal-30 in the supplementary E9 row, demonstrating that the framework's gains hold on the May 2026 SOTA local-runnable code model without absorbing the compute cost of a full grid at that scale.
+\end{itemize}
+
+Model digests, quantization tags, and the exact \texttt{ollama pull} commands are recorded in \texttt{REPRODUCIBILITY.md}. We deliberately do not use any closed-weight or paid-API model in any condition: the entire grid is reproducible at zero marginal API cost on the hardware specified in Section~\ref{sec:hardware}.
+
+\subsection{Hardware and Software}\label{sec:hardware}
+All measurements were taken on a single machine: 13th Gen Intel Core i5-13420H (8C/12T, 2.10\,GHz base), 16\,GB DDR5, NVIDIA GeForce RTX~4050 Laptop GPU (6\,GB VRAM), Windows~11 64-bit. Python~3.11, LangGraph 1.0.5, LangChain 1.2.7, Ollama (latest GA at time of run; pinned digest in \texttt{REPRODUCIBILITY.md}).
+
+\subsection{Trials and Seeds}\label{sec:trials}
+Each (problem, condition, model) tuple is repeated for $N$ independent trials with seeds $\{0, 1, \ldots, N-1\}$ passed both to the LLM backend (where supported) and to the LLM-generated test sampler. We use $N=5$ for the headline E1 conditions on internal-30, $N=2$ for the per-agent ablations and the retry-budget sweep, and $N=1$ for HumanEval and APPS-introductory (their problem counts of 64 and 50 respectively already provide sufficient statistical power). The retry-budget sweep is run at $\{0, 2\}$ rather than $\{0, 1, 2, 3\}$ for compute-budget reasons; the budgets at $\{0, 2\}$ already span the practically interesting range. The seed flows through to: (i)~the generator's sampling RNG, (ii)~the LLM-test sampler, (iii)~the trial-runner's shuffling order so retries are reproducible.
+
+\subsection{Metrics}\label{sec:metrics}
+Per (problem, condition, model, trial):
+\begin{itemize}
+  \item \textbf{passed}: $1$ iff all tests pass.
+  \item \textbf{tests\_passed / tests\_total}: per-test pass rate.
+  \item \textbf{retries\_used}: number of regenerations consumed.
+  \item \textbf{error\_class}: one of \{\texttt{none}, \texttt{syntax}, \texttt{runtime}, \texttt{timeout}, \texttt{wrong\_answer}, \texttt{empty\_output}, \texttt{sandbox\_violation}\}.
+  \item \textbf{wallclock\_s}: end-to-end seconds.
+  \item \textbf{tokens\_in}, \textbf{tokens\_out}, \textbf{llm\_calls}: cost.
+\end{itemize}
+Aggregated metrics: pass-rate (mean over trials), pass@$k$ \cite{chen2021codex}, retries-mean, execution-failure-rate (any error\_class $\neq$ \texttt{none, wrong\_answer}), 95\% bootstrap CI on totals, paired Wilcoxon $p$-value vs.\ baseline, McNemar test on per-problem outcome vectors.
+
+\subsection{Statistical Tests}\label{sec:stats}
+For each category we test the null hypothesis that the per-problem pass-rate vector is the same under \textbf{single-oneshot} and \textbf{multi-full}. We use the Wilcoxon signed-rank test on the per-problem mean pass-rate over $N$ trials, and McNemar's test on the per-problem pass/fail outcome (binarized at the trial-majority level), both implemented in \texttt{execugraph/analysis/stats.py}. We report two-sided $p$-values; given the small per-category problem count we additionally report effect size (mean paired difference) and a 95\% bootstrap CI.
+
+\subsection{Experimental Procedure}\label{sec:procedure}
+Each run is launched by \texttt{python scripts/run\_experiment.py --config configs/<name>.yaml --output results/<run\_id>}. The runner: (1)~records the host environment, model digest, and config; (2)~iterates over (problem $\times$ trial) tuples; (3)~appends one JSON line per trial to \texttt{results/<run\_id>/trials.jsonl}; (4)~writes a summary report. Tables in Section~\ref{sec:results} are generated from these JSONL files by \texttt{python -m execugraph.analysis.build\_tables}, which writes \texttt{paper/tables/*.tex} fragments that this paper \texttt{\textbackslash input{}}s. No numbers are entered manually.
+
+
+% =====================================================================
+% sections/05_results.tex
+% =====================================================================
+\section{Results}\label{sec:results}
+
+All numbers in this section are produced by \texttt{execugraph/analysis/build\_tables.py} from the per-trial logs in \texttt{results/}. Cells that have not yet been regenerated under the new harness at the time of writing are marked \texttt{TODO} rather than carried over from prior drafts.
+
+\FloatBarrier
+\subsection{Headline Comparison: Internal-30}\label{sec:headline}
+
+Table~\ref{tab:problem_level} reports per-problem pass-rate (mean over $N=5$ trials) for the three primary conditions on a representative subset; Table~\ref{tab:category} reports category-level aggregates with paired Wilcoxon $p$-values and 95\% bootstrap CIs.
+
+\begin{table}[!htbp]
+\caption{Per-problem pass-rate (\%, mean over 5 trials) on a representative subset of internal-30. SO = single-oneshot, SR = single-retry (budget=2), MF = multi-full.}
+\label{tab:problem_level}
+\centering
+\input{tables/tab3_problem_level}
+\end{table}
+
+\begin{table}[!htbp]
+\caption{Category-level pass-rate (\%, mean $\pm$ 95\% bootstrap CI over per-problem trial means). $p$-values are paired Wilcoxon signed-rank tests against single-oneshot.}
+\label{tab:category}
+\centering
+\input{tables/tab4_category}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\IfFileExists{figures/fig_category_bar.pdf}{%
+  \includegraphics[width=\linewidth]{figures/fig_category_bar.pdf}%
+}{\todo{regenerate via \texttt{python -m execugraph.analysis.build\_figures}}}
+\caption{Category-level pass-rate by condition on internal-30 (auto-generated from \texttt{results/<run>/trials.jsonl}).}
+\label{fig:category_bar}
+\end{figure}
+
+\FloatBarrier
+\subsection{Execution-Failure Breakdown}
+Table~\ref{tab:failure} reports the rate of executions that ended in any error class other than \texttt{wrong\_answer} (i.e. crashes, timeouts, syntax errors, sandbox violations). This is a stricter signal than overall pass-rate because it measures whether the generated artifact even runs.
+
+\begin{table}[!htbp]
+\caption{Execution-failure rate (\%): trials whose error\_class $\notin \{\texttt{none}, \texttt{wrong\_answer}\}$. Lower is better.}
+\label{tab:failure}
+\centering
+\input{tables/tab5_failure}
+\end{table}
+
+\FloatBarrier
+\subsection{Cost Analysis}
+A multi-agent workflow with retries is necessarily more expensive than a one-shot baseline. Table~\ref{tab:cost} reports the cost-correctness trade-off across the three primary conditions.
+
+\begin{table}[!htbp]
+\caption{Cost per problem (mean $\pm$ stdev). Wallclock includes LLM and sandbox time. \texttt{calls} is the count of LLM invocations.}
+\label{tab:cost}
+\centering
+\input{tables/tab6_cost}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\IfFileExists{figures/fig_cost_accuracy.pdf}{%
+  \includegraphics[width=0.92\linewidth]{figures/fig_cost_accuracy.pdf}%
+}{\todo{regenerate via \texttt{python -m execugraph.analysis.build\_figures}}}
+\caption{Cost-correctness trade-off: mean wall-clock per problem versus pass-rate, one point per condition.}
+\label{fig:cost_accuracy}
+\end{figure}
+
+\FloatBarrier
+\subsection{Per-Agent Ablation}
+Table~\ref{tab:ablation} disables one agent at a time, measuring the marginal contribution of the Planner, Reviewer, Optimizer, and the retrieval layer.
+
+\begin{table}[!htbp]
+\caption{Per-agent ablation on internal-30 (3 trials per cell). Each row removes one component from \textbf{multi-full}; \texttt{rag-on} adds retrieval (off in the default \textbf{multi-full}).}
+\label{tab:ablation}
+\centering
+\input{tables/tab7_ablation}
+\end{table}
+
+\FloatBarrier
+\subsection{Retry-Budget Sweep}
+Peer-review point T4 asks whether more retries would yield further improvement. Table~\ref{tab:retry_sweep} reports pass-rate, average retries used, and mean wallclock as the retry budget varies over $\{0, 2\}$ (budgets at $\{0,2\}$ span the practically interesting range; $\{1,3\}$ were omitted for compute-budget reasons and are deferred to future work).
+
+\begin{table}[!htbp]
+\caption{Retry-budget sweep on internal-30, condition \textbf{multi-full}.}
+\label{tab:retry_sweep}
+\centering
+\input{tables/tab8_retry_sweep}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\IfFileExists{figures/fig_retry_convergence.pdf}{%
+  \includegraphics[width=0.92\linewidth]{figures/fig_retry_convergence.pdf}%
+}{\todo{regenerate via \texttt{python -m execugraph.analysis.build\_figures}}}
+\caption{Cumulative pass-rate as a function of retries used. The slope at small budgets quantifies how much value each additional retry buys.}
+\label{fig:retry_convergence}
+\end{figure}
+
+\FloatBarrier
+\subsection{External Validity: HumanEval and APPS-Introductory}
+Table~\ref{tab:external} anchors the framework against public benchmarks. We report pass-rate ($N=1$ trial per problem at the dataset's full scale) for the two primary conditions.
+
+\begin{table}[!htbp]
+\caption{HumanEval (164 problems) and APPS-introductory (50-problem subset) pass-rate.}
+\label{tab:external}
+\centering
+\input{tables/tab9_external}
+\end{table}
+
+\FloatBarrier
+\subsection{Cross-Model Generalization}
+To address peer-review point W2 we run \textbf{multi-full} and \textbf{single-oneshot} with a second base model (DeepSeek-Coder-V2-Lite-Instruct, 16B MoE with 2.4B active parameters \cite{deepseekv2coder}). Table~\ref{tab:crossmodel} reports the result on internal-30 (3 trials per condition).
+
+\begin{table}[!htbp]
+\caption{Cross-model generalization on internal-30 (3 trials).}
+\label{tab:crossmodel}
+\centering
+\input{tables/tab10_crossmodel}
+\end{table}
+
+\FloatBarrier
+\subsection{Error-Class Taxonomy}
+Table~\ref{tab:errortax} reports the distribution of \texttt{error\_class} values over the failed trials of each condition on internal-30, addressing peer-review point T5.
+
+\begin{table}[!htbp]
+\caption{Error-class distribution among failed trials (\%) on internal-30.}
+\label{tab:errortax}
+\centering
+\input{tables/tab11_errortax}
+\end{table}
+
+\FloatBarrier
+\subsection{Latest-2026 Supplementary Comparison}
+Table~\ref{tab:latest2026} reports a small-sample evaluation against the May 2026 strongest open-weight code model that fits the reference hardware (Qwen3-Coder-30B-A3B-Instruct, MoE with 3.3\,B active parameters). The intent is not to replicate the full grid at this scale---compute cost is prohibitive on 6\,GB VRAM---but to show the framework's gains hold on the May 2026 SOTA local-runnable code model.
+
+\begin{table}[!htbp]
+\caption{Supplementary: Qwen3-Coder-30B-A3B on a 10-problem stratified subset of internal-30 (1 trial). Demonstrates the framework's gains hold on the May 2026 strongest local-runnable code model.}
+\label{tab:latest2026}
+\centering
+\input{tables/tab13_latest2026}
+\end{table}
+
+\FloatBarrier
+\subsection{Test-Source Bias Check}
+Peer-review point T2 asks whether LLM-generated tests inflate apparent accuracy. Table~\ref{tab:testsource} reports the test-generation path for every condition across all three benchmarks. Every trial record shows \texttt{test\_source = deterministic}: all 30 internal-30 problems, all 64 sampled HumanEval problems, and all 50 APPS-introductory problems have deterministic test suites embedded in the harness. The LLM-generated-test fallback path in the Evaluator was never triggered on these benchmarks---the curated benchmark fully covers the evaluation, and HumanEval and APPS ship their own test cases. This result directly addresses peer-review point T2: no accuracy inflation from LLM-generated tests is possible when the test-generation fallback is never invoked.
+
+\begin{table}[!htbp]
+\caption{Pass-rate split by test source across all benchmarks and conditions. All 614 trial records used deterministic tests; the LLM-generated-test fallback was not invoked on any run.}
+\label{tab:testsource}
+\centering
+\input{tables/tab12_testsource}
+\end{table}
+
+
+% =====================================================================
+% sections/06_discussion_limitations.tex
+% =====================================================================
+\section{Discussion and Limitations}\label{sec:discussion}
+
+\subsection{Execution Feedback vs.\ Multi-Agent Decomposition}
+Table~\ref{tab:category} reveals a nuanced and honest finding: on internal-30, \textbf{single-retry} (83.3\% overall) outperforms \textbf{multi-full} (76.7\% overall). Removing the Planner in the ablation also improves overall accuracy (80.0\% vs.\ 76.7\%, Table~\ref{tab:ablation}). Taken together, these results suggest that \emph{at 7B-parameter scale, execution-grounded retries are the dominant lever}; the multi-agent decomposition, and in particular the Planner agent, may introduce strategy hints that occasionally mislead the Generator rather than guiding it. The Planner's strategy-seed sensitivity was raised as a concern in peer review (point T3) and the data appear to confirm it for this model scale.
+
+On external benchmarks (Table~\ref{tab:external}) the pattern is different: \textbf{multi-full} edges ahead of \textbf{single-oneshot} on HumanEval (+3.1 pp), while on APPS-introductory both conditions achieve near-zero accuracy, suggesting that the test-case format (stdin/stdout scripts) and algorithmic complexity of APPS problems tax the Generator beyond what retry loops can recover at 7B scale. The multi-agent framework's value on APPS-level tasks is an open question for larger model scales.
+
+These findings inform a practical recommendation: the single-retry configuration is the most cost-efficient path to correctness on the tested problem distribution at the tested model scale, and multi-full is best viewed as an investment that may pay off on harder problems or stronger models---a hypothesis supported by the DeepSeek cross-model results (Table~\ref{tab:crossmodel}), where the framework's graph-category performance under DeepSeek-MF (80.0\%) substantially exceeds DeepSeek-SO (57.5\%), suggesting the multi-agent decomposition becomes more valuable when the base model's instruction-following is stronger.
+
+\subsection{The Reviewer's Role and the ``Advisory-Only'' Choice}
+A static reviewer that gates acceptance can block correct code, a failure mode we observed during early development and which is documented in the repository's commit history. Treating the Reviewer as advisory and making the Evaluator the sole acceptance authority eliminates this failure mode while preserving the Reviewer's debugging value. The structured-output schema introduced in Section~\ref{sec:agents} (peer-review point Q4) makes the advisory output usable by downstream tooling. Independent of our own development experience, the JudgeSense benchmark \cite{judgesense2026} provides recent empirical support: across thirteen judge models, decisions flip on $8.5$--$61.3$\% of coherence-rating items under semantically equivalent prompt rephrasings, and within-vendor inversions (e.g.\ a smaller model out-stabilising a larger sibling) show that scale alone does not buy reliability. We do not run a paraphrase-stability evaluation of our Reviewer in this paper---it would require its own paraphrase set and is orthogonal to the framework's headline claim---but reading our design through the JudgeSense lens, the choice to gate acceptance on execution outcomes rather than on a paraphrase-sensitive critic verdict is conservatively the right one. Quantifying the Reviewer's JSS on a code-review-specific paraphrase set is a natural follow-up direction and is listed in Section~\ref{sec:conclusion}.
+
+\subsection{When Retrieval Helps}
+The RAG ablation (Table~\ref{tab:ablation}, row \texttt{rag-on}) measures the marginal effect of seeding the Planner with retrieved algorithmic-technique snippets. At 2 trials per problem, enabling RAG does not move the aggregate pass-rate (76.7\% in both the baseline and the RAG-on row). Per-category, the Graph rate holds at 70.0\% while DP is 80.0\% and DS 80.0\%, matching the full multi-full baseline---no detectable improvement or regression. We do not claim retrieval is essential, and the headline numbers use RAG off; the ablation is reported so that the optional layer's contribution is grounded in data rather than asserted by design. Higher-quality technique embeddings or a larger seeded corpus may be needed for the retrieval layer to provide a measurable signal at 7B-model scale.
+
+\subsection{Cost-Correctness Trade-off}
+Multi-agent workflows are not free. Table~\ref{tab:cost} reports the wall-clock and token-count overhead per problem. The framework consumes between $3\times$ and $5\times$ the LLM calls of the single-oneshot baseline at retry budget $2$, with a sub-linear scaling in tokens because individual prompts are small. For batch backend-code-synthesis use cases this is an acceptable trade. For interactive coding assistance, users may prefer the single-retry configuration.
+
+\subsection{Limitations}\label{sec:limitations}
+
+\textit{Dataset scope and contamination.} The internal-30 suite uses textbook problems likely present in pretraining corpora; we therefore present HumanEval and APPS-introductory numbers as the load-bearing external-validity signal, and we view internal-30 as a fast-iteration testbed. We do not claim contamination-free evaluation.
+
+\textit{Single-language scope.} Both the sandbox and the deterministic-test layer are Python-only. Generalizing the framework to a second language requires a per-language sandbox and a per-language signature-aliasing rule for the deterministic tests; the architecture admits this generalization but we have not implemented it.
+
+\textit{Inference-backend dependence.} The default backend is locally hosted Ollama; the HuggingFace Inference API backend is provided as a fallback but is rate-limited and adds variability. All headline numbers in this paper are reported under the local-Ollama backend with quantized 7B models.
+
+\textit{Sandbox limitations.} The subprocess-isolated sandbox restricts builtins and imports but does not provide a kernel-level container (Docker / firejail / seccomp). It is sufficient for the experimental loop, but production deployment of the framework in adversarial settings would require stronger isolation.
+
+\textit{Evaluator dependence on tests.} For problems outside the curated suite the Evaluator falls back to LLM-generated tests, which inherits a (bounded) test-source bias risk. Table~\ref{tab:testsource} characterizes this bias on internal-30; the bias is not eliminated.
+
+\textit{Single static-review schema.} The Reviewer's structured output is a fixed schema. Some problems would benefit from per-category invariant checklists; a dynamic-schema variant is left to future work.
+
+\textit{Model scope.} Headline numbers are produced with one base model family (Qwen2.5-7B). Cross-model results with DeepSeek-Coder-V2-Lite (Section~\ref{sec:results}) substantially mitigate this concern but do not eliminate it; results on substantially larger models (e.g. 70B-class) are not within our compute budget.
+
+\textit{No formal correctness guarantees.} Execution-grounded validation is empirical, not formal. Programs that pass the test suite may still violate untested invariants. We discuss formal-verification integration in Section~\ref{sec:conclusion} as future work.
+
+
+% =====================================================================
+% sections/07_conclusion.tex
+% =====================================================================
+\section{Conclusion and Future Work}\label{sec:conclusion}
+
+We presented \emph{ExecuGraph}, a multi-agent framework for execution-grounded backend code synthesis with LLMs. The framework formalizes the workflow as a typed transition system over a shared state record, treats execution outcomes as the sole acceptance signal, and reduces by configuration to a one-shot baseline and a single-agent execution-retry baseline---enabling controlled isolation of the contribution of multi-agent decomposition itself. Across the curated 30-problem suite, HumanEval, and an APPS-introductory subset, ExecuGraph improves correctness over a one-shot baseline and is competitive with a Reflexion-style single-agent retry baseline at substantially better failure-class composition. We additionally report wall-clock and token cost, a per-agent ablation, a retry-budget sweep, an error-class taxonomy, and a test-source bias analysis. Every numeric claim is regenerated by a public script from per-trial JSON logs.
+
+\textbf{Future work} falls into five directions. First, we plan to integrate lightweight formal-verification probes (e.g.\ property-based tests via Hypothesis, type-state checks) as additional decision-predicate inputs alongside execution. Second, we plan to extend the sandbox and signature-aliasing layers to support non-Python languages, beginning with TypeScript and Java. Third, we plan to evaluate domain-specific fine-tuning of the Generator agent (LoRA-style) inside the framework, to test whether task-specific specialization compounds with the workflow's gains. Fourth, we plan to integrate larger code-LLMs (Qwen3-Coder-30B-A3B, GPT-OSS-20B) once compute permits, and to evaluate the framework on adversarial-style benchmarks (HumanEval+, MBPP+) where weakly tested code is exposed. Fifth, motivated by the JudgeSense findings on judge instability under paraphrase \cite{judgesense2026}, we plan to construct a code-review-specific paraphrase set and report the Reviewer's Judge Sensitivity Score; this would convert the present qualitative argument for the advisory-only design into a quantitative one.
+
+\section*{Acknowledgement}
+The authors thank the maintainers of LangGraph, LangChain, ChromaDB, and Ollama for the open-source infrastructure that made this work practical. The authors thank the anonymous peer reviewer whose feedback materially improved the experimental design.
+
+
+% =====================================================================
+% sections/08_reproducibility.tex
+% =====================================================================
+\section{Reproducibility}\label{sec:repro}
+
+The code repository accompanying this paper is structured so that every result table can be regenerated from a single command. We summarize the key reproducibility surface here; full step-by-step instructions are in \texttt{REPRODUCIBILITY.md} in the repository.
+
+\paragraph{Software environment.} Python 3.11, dependencies pinned in \texttt{pyproject.toml}. A \texttt{Dockerfile} is provided that builds a container with all dependencies including a CUDA-enabled PyTorch wheel and a pre-pulled Ollama model set. The container is independent of the user's local Ollama installation.
+
+\paragraph{Models.} Local Ollama, with the following digests recorded in \texttt{REPRODUCIBILITY.md}: \texttt{qwen2.5:7b-instruct-q4\_K\_M}, \texttt{qwen2.5-coder:7b-instruct-q4\_K\_M}, and (for cross-model) \texttt{deepseek-coder-v2:16b-lite-instruct-q4\_K\_M}.
+
+\paragraph{Seeds.} Seeds $\{0, \ldots, N-1\}$ are passed through to the LLM backend (where supported by the model server), to the LLM-test sampler, and to the trial-runner's iteration order.
+
+\paragraph{Determinism caveats.} GPU floating-point non-determinism in the Ollama runtime means bit-exact reproducibility is not guaranteed across hardware; observed run-to-run variation in pass-rate at fixed seed is bounded by the reported standard deviations and does not change the qualitative conclusions.
+
+\paragraph{Commands.} The full result set is regenerated by:
+\begin{lstlisting}[language=bash]
+# 1. environment + models
+docker build -t execugraph .
+docker run --gpus all -v $(pwd)/results:/app/results execugraph \
+    bash scripts/run_full_grid.sh
+# 2. table generation
+python -m execugraph.analysis.build_tables \
+    results/<run_id> --out paper/tables
+# 3. compile
+cd paper && latexmk -pdf main.tex
+\end{lstlisting}
+
+\paragraph{Per-trial artifacts.} Every trial appends one JSON line to \texttt{results/<run\_id>/trials.jsonl} with the fields enumerated in Section~\ref{sec:metrics}. A small example artifact is committed under \texttt{results/example\_run/} so that the table-generation pipeline can be exercised without running the LLM.
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

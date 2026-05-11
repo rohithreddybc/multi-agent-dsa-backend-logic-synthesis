@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+title: >-
+  ExecuGraph: A Multi-Agent, Execution-Grounded Framework for Reliable
+  Backend Code Synthesis with Large Language Models
+message: >-
+  If you use this software, please cite the accompanying paper.
+type: software
+authors:
+  - family-names: Jothi Prabha
+    given-names: A.
+    affiliation: Kakatiya Institute of Technology and Science, Warangal
+  - family-names: Sai Deekshith
+    given-names: L.
+    affiliation: Kakatiya Institute of Technology and Science, Warangal
+  - family-names: Bellibatlu
+    given-names: Rohith Reddy
+    affiliation: Independent Researcher
+    orcid: ""
+  - family-names: Suganeshwari
+    given-names: G.
+    affiliation: Vellore Institute of Technology, Chennai
+repository-code: "https://github.com/rohithreddybc/multi-agent-dsa-backend-logic-synthesis"
+keywords:
+  - multi-agent systems
+  - large language models
+  - code generation
+  - execution-grounded validation
+  - software reliability
+  - retrieval-augmented generation
+license: Apache-2.0
+preferred-citation:
+  type: article
+  title: >-
+    ExecuGraph: A Multi-Agent, Execution-Grounded Framework for Reliable
+    Backend Code Synthesis with Large Language Models
+  authors:
+    - family-names: Jothi Prabha
+      given-names: A.
+    - family-names: Sai Deekshith
+      given-names: L.
+    - family-names: Bellibatlu
+      given-names: Rohith Reddy
+    - family-names: Suganeshwari
+      given-names: G.
+  journal: IEEE Access
+  year: 2026

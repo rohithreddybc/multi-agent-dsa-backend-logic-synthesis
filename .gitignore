@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# LaTeX build artifacts (keep sources and PDFs, not aux files)
+paper/*.aux
+paper/*.log
+paper/*.bbl
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.out
+paper/*.synctex.gz
+paper/figures/*.aux
+paper/figures/*.log
+
+# ChromaDB runtime data (large, reproducible via seed_techniques.py)
+**/chroma.sqlite3
+**/*.bin
+**/header.bin
+**/length.bin
+**/link_lists.bin
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / env
+.env
+*.env
+**/.env
+
+# Results that are too large (keep example_run and submission summary)
+# Uncomment if results grow too large:
+# results/*/trials.jsonl

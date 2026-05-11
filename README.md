@@ -1,292 +1,172 @@
-# Multi-Agent Framework for Reliable DSA-Driven Backend Logic Synthesis
-### Execution-Verified Code Generation using Large Language Models
+# ExecuGraph
 
-> **TL;DR**  
-> This project investigates whether structured multi-agent orchestration with execution-based
-> validation can improve the reliability of LLM-generated backend algorithms compared to
-> single-pass generation. Correctness is enforced through runtime execution and testing,
-> not textual self-review.
+A multi-agent, execution-grounded framework for backend code synthesis with Large Language Models.
 
----
+> ExecuGraph decomposes code generation into specialized agents (Planner, Code Generator, Logical Reviewer, Evaluator, Optimizer, Explainer) coordinated by a deterministic LangGraph workflow over typed shared state. **Acceptance is decided by sandboxed execution, not by static review.** A bounded retry loop drives recovery from runtime failures.
 
-## Overview
-
-Large Language Models (LLMs) have demonstrated strong capabilities in automated code generation.
-However, most existing systems rely on **single-agent, single-pass generation**, which often fails
-in scenarios requiring strict logical correctness—particularly in **data structure and algorithm
-(DSA)–driven backend systems**, where determinism, efficiency, and edge-case handling are critical.
-
-This project proposes a **multi-agent framework** for backend logic synthesis, verification, and
-optimization using LLMs. The system decomposes code generation into **specialized agents**,
-orchestrated through a deterministic workflow graph.
-
-Unlike prior approaches, **correctness is enforced through execution and testing**, rather than
-relying on textual self-evaluation. All experiments are **fully reproducible** using locally hosted
-LLMs, making the system suitable for academic research and evaluation.
+This repository accompanies the paper *ExecuGraph: A Multi-Agent, Execution-Grounded Framework for Reliable Backend Code Synthesis with Large Language Models* (IEEE Access submission).
 
 ---
 
-## Research Motivation
-
-Despite producing syntactically valid code, LLMs frequently:
-
-- hallucinate incorrect logic  
-- miss edge cases  
-- generate inefficient implementations  
-- falsely validate incorrect solutions via self-review  
-
-This project is motivated by the following research question:
-
-> **Can structured multi-agent orchestration with execution-based validation improve the reliability
-> of LLM-generated backend algorithms compared to single-pass generation?**
-
----
-
-## Key Contributions
-
-- Multi-agent decomposition of backend algorithm generation  
-- Execution-first correctness validation (runtime > text)  
-- Hybrid evaluation agent (deterministic + LLM-generated tests)  
-- Retry-controlled workflow using LangGraph  
-- Transparent state propagation and debugging  
-- Empirical comparison with single-agent baselines  
-- Optional algorithm memory for technique and pattern retrieval  
-- Fully local and reproducible LLM execution  
-
----
-
-## System Architecture Overview
-
-The framework consists of specialized agents, each responsible for a well-defined role:
-
-### Planner Agent
-- Classifies problem type (Dynamic Programming, Graph, Data Structure, etc.)
-- Selects appropriate algorithmic strategy
-- Produces structured reasoning
-- Optionally retrieves relevant techniques and patterns from a local vector database
-
-### Code Generation Agent
-- Converts plans into deterministic Python code
-- Uses low-temperature generation for stability
-
-### Review Agent (Advisory)
-- Performs static logical inspection
-- Identifies potential flaws (non-authoritative)
-
-### Evaluation Agent (Core Authority)
-- Executes code in a controlled environment
-- Validates correctness using test cases  
-- Hybrid testing approach:
-  - deterministic tests for known DSA problems  
-  - LLM-generated tests for unseen or open-ended cases  
-
-### Decision Agent
-- Routes workflow based on execution outcome
-- Controls retries and termination
-
-### Optimization Agent
-- Improves time and memory efficiency
-- Runs only after correctness is empirically verified
-
-### Explanation Agent
-- Generates human-readable algorithm explanations
-
-Workflow orchestration is implemented using **LangGraph**, enabling deterministic execution paths,
-bounded retries, and explicit state transitions.
-
----
-
-## Algorithm Memory (Technique Store)
-
-The system optionally incorporates an **algorithm memory module**, implemented as a vector database:
-
-- Stores common DSA techniques, patterns, and strategies
-- Retrieved by the Planner Agent when applicable
-- Enables reuse of known algorithmic approaches
-- Reduces hallucinated or inconsistent planning decisions
-
-This component is modular and can be enabled or disabled without affecting the core workflow.
-
----
-
-## Evaluation Methodology
-
-### Multi-Agent Evaluation
-- Code is executed, not just reviewed
-- Runtime errors or incorrect outputs trigger regeneration
-- Final acceptance depends solely on execution success
-
-### Single-Agent Baseline
-- One-pass LLM generation
-- No execution feedback
-- No retries or optimization
-
-This contrast highlights the reliability gap between single-agent and execution-verified
-multi-agent systems.
-
----
-
-## Experimental Problem Set
-
-| Category | Problem |
-|--------|--------|
-| Dynamic Programming | Climbing Stairs |
-| Graph Algorithms | Task Dependency Resolution (Topological Sort) |
-| Data Structures | LRU Cache (O(1) operations) |
-
-Each problem was solved using:
-- a single-agent LLM baseline
-- the proposed multi-agent framework
-
-Screenshots of execution results, evaluation traces, and agent workflows are included.
-
----
-
-## Project Structure
-
-```
-Multi-Agent-Project/
-│
-├── agents/
-│   ├── planner_agent.py
-│   ├── generate_agent.py
-│   ├── review_agent.py
-│   ├── evaluator_agent.py      # Hybrid execution-based evaluator
-│   ├── optimizer_agent.py
-│   ├── explainer_agent.py
-│   └── single_agent/
-│       ├── run_single_agent.py # Baseline comparison
-│       └── single_agent.py
-│
-├── graph/
-│   └── workflow.py             # LangGraph orchestration
-│
-├── memory/                     # Optional algorithm memory module
-│   ├── technique_store.py
-│   ├── technique_retriever.py
-│   ├── seed_techniques.py
-│   └── TECHNIQUES.py
-│
-├── models/
-│   └── all-MiniLM-L6-v2         # Embedding model (download if memory enabled)
-│
-├── prompts/
-│   ├── planner.txt
-│   ├── generator.txt
-│   ├── review.txt
-│   ├── evaluator.txt
-│   ├── explain.txt
-│   └── optimizer.txt
-│
-├── screenshots/
-│   ├── single_agent/
-│   └── multi_agent/
-│
-├── util/
-│   ├── llm.py
-│   ├── code_extractor.py
-│   └── code_sanitize.py
-│
-├── app.py                      # Streamlit interface
-├── requirements.txt
-└── README.md
-```
-
----
-
-## Technology Stack
-
-- Python  
-- LangChain  
-- LangGraph  
-- Ollama (local LLM inference)  
-- Streamlit  
-- FastAPI (optional)  
-- ChromaDB (optional algorithm memory)  
-
----
-
-## LLM Configuration (Reproducible)
-
-All models are run locally via Ollama.
-
-| Role | Model |
-|----|----|
-| Planner / Reviewer / Explainer | `qwen2.5:7b-instruct` |
-| Generator / Optimizer | `qwen2.5-coder:7b-instruct` |
-
----
-
-## How to Run
+## Quick start
 
 ```bash
-pip install -r requirements.txt
-ollama serve
+# 1. Python deps
+pip install -e .
+
+# 2. Local LLM backend (default; recommended)
+#    Install Ollama from https://ollama.com/download, then:
+ollama pull qwen3:4b-instruct-2507-q4_K_M       # planner / reviewer / explainer
+ollama pull qwen2.5-coder:7b-instruct-q4_K_M    # generator / optimizer
+
+# 3. Smoke test the harness without running an LLM
+pytest -q tests/unit
+
+# 4. Run a small experiment (3 problems, 1 trial)
+python scripts/run_experiment.py \
+    --config configs/default.yaml \
+    --output results/smoke \
+    --condition multi-full \
+    --n-trials 1 --limit 3
 ```
 
-### Streamlit UI
+For the full IEEE Access experiment grid (~30–45 hours on an RTX 4050 6 GB):
+
 ```bash
-streamlit run app.py
+RUN_ID=submission ./scripts/run_full_grid.sh
+python -m execugraph.analysis.build_tables  results/submission --out ../paper/tables
+python -m execugraph.analysis.build_figures results/submission --out ../paper/figures
 ```
 
-### Single-Agent Baseline
+To preview what the paper looks like *before* running the grid (using
+synthetic data, with a DRAFT watermark):
+
 ```bash
-python -m agents.single_agent.run_single_agent
+./scripts/build_preview.sh        # produces ../paper_preview/main.pdf
 ```
 
+See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for the full per-experiment runtime estimates and exact commands.
+
 ---
 
-## Screenshots (Evidence of Evaluation)
+## Architecture
 
 ```
-screenshots/
-├── single_agent/
-│   ├── q1_dp.png
-│   ├── q2_graph.png
-│   └── q3_lru.png
-└── multi_agent/
-    ├── q1_dp_eval.png
-    ├── q2_graph_eval.png
-    └── q3_lru_eval.png
+                 ┌────────────┐
+                 │  Planner   │◄──── (optional) ChromaDB technique store
+                 └──────┬─────┘
+                        │ structured plan
+                        ▼
+                 ┌────────────┐                ┌──────────────────┐
+        ┌────────│ Generator  │───────────────►│ Logical Reviewer │  (advisory)
+        │        └──────┬─────┘                └─────────┬────────┘
+        │ retry         │ candidate code                 │ structured advisory
+        │ feedback      ▼                                ▼
+        │       ┌──────────────────────┐
+        │       │     Evaluator        │ ◄── deterministic OR LLM-generated tests
+        │       │  subprocess sandbox  │ ◄── runtime acceptance signal
+        │       └────────┬─────────────┘
+        │                │
+        ▼                ▼
+   fail / budget   pass
+        │                │
+        │                ▼
+        │         ┌────────────┐
+        │         │ Optimizer  │  (re-validates before accepting)
+        │         └─────┬──────┘
+        │               ▼
+        │         ┌────────────┐
+        └────────►│ Explainer  │
+                  └────────────┘
 ```
 
-These screenshots demonstrate:
-- execution-based correctness enforcement  
-- retry and regeneration behavior  
-- optimization improvements  
-- failure modes of single-agent generation  
+The same graph reduces by configuration to **single-oneshot** (Generator + Evaluator only, retry budget 0) and **single-with-retry** (a Reflexion-style baseline). This makes per-component contributions measurable in isolation.
 
 ---
 
-## Academic Relevance
+## Repository layout
 
-This project aligns closely with research interests in:
+```
+.
+├── execugraph/              # the package
+│   ├── agents/              # Planner, Generator, Reviewer, Evaluator, Optimizer, Explainer
+│   ├── graph/               # LangGraph workflow + standalone routing predicate
+│   ├── benchmarks/          # internal30, APPS-introductory, HumanEval loaders
+│   ├── execution/           # subprocess sandbox + code sanitisation
+│   ├── llm/                 # provider-agnostic LLM backends (Ollama, HF)
+│   ├── memory/              # optional ChromaDB technique store
+│   ├── pipelines/           # single-oneshot, single-with-retry, multi-agent
+│   ├── runner/              # trial / batch / CLI runner
+│   ├── analysis/            # paired Wilcoxon, McNemar, table generators
+│   ├── prompts/             # prompt templates for each agent
+│   └── ui/                  # Streamlit interactive demo
+├── configs/                 # YAML configs per backend / model
+├── tests/                   # pytest unit tests (no LLM needed)
+├── scripts/                 # run_experiment.py, run_full_grid.sh
+├── results/example_run/     # SYNTHETIC artifact for harness smoke testing
+├── pyproject.toml
+├── Dockerfile
+└── REPRODUCIBILITY.md
+```
 
-- Trustworthy AI  
-- Agentic LLM Systems  
-- Automated Software Engineering  
-- Execution-Verified Code Generation  
-
-Relevant programs:
-- MScAC (AI) – University of Toronto  
-- MSc AI / CS – University of Zurich  
+The `Prompts/` directory at the top level (legacy) and the loose top-level `agents/`, `graph/`, `memory/`, `util/`, `app.py`, `test_*.py` files are **deprecated**: their behaviour was migrated into the `execugraph/` package and the `tests/` suite. They are retained for one release for backwards-compatibility readers, then will be deleted.
 
 ---
 
-## Future Work
+## Configuration
 
-- Automatic test generation with coverage guarantees  
-- Formal verification integration  
-- Cross-language backend support  
-- Larger model benchmarking (32B+ LLMs)  
-- Secure sandboxed execution environments  
+LLM backends are selected via YAML:
+
+| File | Backend | Use case |
+|-|-|-|
+| `configs/default.yaml` | Qwen3-4B + Qwen2.5-Coder-7B (Ollama, q4) | Default; matches paper headline numbers |
+| `configs/strong.yaml` | + Qwen3-Coder-30B-A3B MoE generator | Opt-in stronger generator (slower) |
+| `configs/crossmodel.yaml` | Llama-3.1-8B + DeepSeek-Coder-V2-Lite-16B | Cross-model row (independent vendor family) |
+| `configs/hf_fallback.yaml` | HuggingFace Inference API | No local GPU; rate-limited |
+
+The selection is honoured by every entrypoint (`scripts/run_experiment.py`, `execugraph-run`, the Streamlit UI).
 
 ---
 
-## Author
+## Reproducing the paper tables
 
-**L. Sai Deekshith**  
-AI / ML Research-Focused Developer  
+Every numeric cell in the paper traces to a JSON line in `results/<run>/trials.jsonl`. To regenerate:
 
-**Interests:**  
-Agentic AI · Generative AI ·  Reliable & Fine-Tuned LLMs · Code Generation Systems · Backend Engineering · Trustworthy ML & DL
+```bash
+RUN_ID=submission ./scripts/run_full_grid.sh
+python -m execugraph.analysis.build_tables results/submission --out ../paper/tables
+cd ../paper && latexmk -pdf main.tex
+```
+
+Cells in the paper that are currently `\todo{}` correspond to runs that have not yet been executed; running the grid above on the reference hardware will replace them automatically.
+
+---
+
+## Testing
+
+```bash
+pytest -q tests/unit          # 31 tests, no LLM required
+ruff check execugraph tests   # lint
+```
+
+CI on GitHub Actions runs the lint + unit-test surface on every push.
+
+---
+
+## Authors
+
+- A. Jothi Prabha (corresponding author) — Kakatiya Institute of Technology and Science, Warangal
+- L. Sai Deekshith — Kakatiya Institute of Technology and Science, Warangal
+- Rohith Reddy Bellibatlu — Independent Researcher
+
+---
+
+## Citing
+
+If you use this code or framework, please cite the paper. A `CITATION.cff` will be added once the paper has a DOI.
+
+---
+
+## License
+
+Apache-2.0.
