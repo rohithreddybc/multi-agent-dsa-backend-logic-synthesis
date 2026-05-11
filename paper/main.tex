@@ -144,7 +144,7 @@ We first present the high-level architecture (Section~\ref{sec:arch}), then spec
 \subsection{High-Level Architecture}\label{sec:arch}
 ExecuGraph follows a layered design (Fig.~\ref{fig:arch}). A \emph{User Interaction Layer} accepts a backend / DSA problem statement. A \emph{Workflow Orchestration Layer} (LangGraph) compiles a directed graph that schedules agent invocations and routes control based on the typed shared state. An \emph{Agent Layer} contains six specialized agents (Planner, Code Generator, Logical Reviewer, Evaluator, Optimizer, Explainer). An \emph{Execution and Evaluation Layer} runs the generated code in a subprocess-isolated sandbox and applies a hybrid testing strategy. An \emph{optional Knowledge Memory Layer} (ChromaDB) supplies retrieved algorithmic-technique snippets to the Planner only; it is config-toggled and disabled by default in the headline numbers, with a dedicated on/off ablation in Section~\ref{sec:results}.
 
-\begin{figure}[!htbp]
+\begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figures/architecture_layered.pdf}
 \caption{Five-layer architecture of ExecuGraph. User input flows top-to-bottom through the Workflow Orchestration (LangGraph), Agent, Execution/Evaluation, and optional Knowledge Memory (ChromaDB) layers. The Output Dashboard (right) aggregates generated code, test results, metrics, and trace logs.}
@@ -246,7 +246,7 @@ Algorithm~\ref{alg:execugraph} states the workflow procedure compactly. The nota
 \end{algorithmic}
 \end{algorithm}
 
-\begin{figure}[!htbp]
+\begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figures/workflow_dag.pdf}
 \caption{ExecuGraph workflow DAG. Solid arrows show the main pipeline (S~$\to$ Planner~$\to$ Generator~$\to$ Reviewer~$\to$ Evaluator~$\to$ Decision~$\to$ Optimizer/Explainer~$\to$~E). The red curved arrow is the retry loop, active when \texttt{retries\,<\,retry\_budget}. Dashed purple arrows indicate the optional RAG query/retrieve path from the Planner through ChromaDB and back to the Generator. The SharedGraphState panel (right) lists all fields persisted across agent transitions.}
@@ -347,11 +347,11 @@ We evaluate on three suites with deliberately overlapping but distinct purposes.
 \paragraph{Internal-30.}
 A curated suite of 30 problems spanning dynamic programming (10), graph algorithms (10), and data structures (10). 27 are internally designed; 3 are adapted from the APPS-introductory partition \cite{hendrycks2021apps}, marked explicitly in the benchmark loader. Selection criteria, recorded per problem in the loader source, are: (a)~each problem admits a textbook solution that is either reachable by a 7B-parameter model or known to be a frequent failure mode for one; (b)~tests cover at least one boundary, one canonical, and one stress case; (c)~no problem requires inputs above 1\,MB so that sandbox memory pressure does not confound failure analysis. The full list with selection rationale is shipped with the code (\texttt{execugraph/benchmarks/internal30.py}). Table~\ref{tab:internal30} lists all 30 problems by category.
 
-\begin{table}[!htbp]
+\begin{table*}[!t]
 \caption{Internal-30 benchmark problems by category. $\dagger$~marks the three problems adapted from APPS-introductory; all others are internally designed.}
 \label{tab:internal30}
 \centering
-\small
+\footnotesize
 \begin{tabular}{@{}lll@{}}
 \toprule
 \textbf{Category (10 each)} & \textbf{Problem ID} & \textbf{Description} \\
@@ -393,7 +393,7 @@ A curated suite of 30 problems spanning dynamic programming (10), graph algorith
   & \texttt{valid\_parentheses} & Balanced-bracket check \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
 \paragraph{HumanEval.}
 The 164 problems of HumanEval \cite{chen2021codex}, used to anchor external validity. We use the official tests verbatim through the sandbox.
@@ -460,14 +460,14 @@ All numbers in this section are produced by \texttt{execugraph/analysis/build\_t
 
 Table~\ref{tab:problem_level} reports per-problem pass-rate (mean over $N=5$ trials) for the three primary conditions on the internal-30 suite; Table~\ref{tab:category} reports category-level aggregates with paired Wilcoxon $p$-values for both \mbox{SO\,$\to$\,MF} and \mbox{SR\,$\to$\,MF} contrasts. None of the per-category $p$-values reach the conventional $\alpha=0.05$ threshold: at $n{=}10$ problems per category the test is underpowered for the observed effect sizes. The pooled-$n=30$ analysis (across all internal-30 problems) is reported and discussed in Section~\ref{sec:discussion}.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Per-problem pass-rate (\%, mean over 5 trials) on a representative subset of internal-30. SO = single-oneshot, SR = single-retry (budget=2), MF = multi-full.}
 \label{tab:problem_level}
 \centering
 \input{tables/tab3_problem_level}
 \end{table}
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Category-level pass-rate (\%, mean $\pm$ 95\% bootstrap CI over per-problem trial means). $p$-values are paired Wilcoxon signed-rank tests against single-oneshot.}
 \label{tab:category}
 \centering
@@ -487,7 +487,7 @@ Table~\ref{tab:problem_level} reports per-problem pass-rate (mean over $N=5$ tri
 \subsection{Execution-Failure Breakdown}
 Table~\ref{tab:failure} reports the rate of executions that ended in any error class other than \texttt{wrong\_answer} (i.e. crashes, timeouts, syntax errors, sandbox violations). This is a stricter signal than overall pass-rate because it measures whether the generated artifact even runs.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Execution-failure rate (\%): trials whose error\_class $\notin \{\texttt{none}, \texttt{wrong\_answer}\}$. Lower is better.}
 \label{tab:failure}
 \centering
@@ -498,7 +498,7 @@ Table~\ref{tab:failure} reports the rate of executions that ended in any error c
 \subsection{Cost Analysis}
 A multi-agent workflow with retries is necessarily more expensive than a one-shot baseline. Table~\ref{tab:cost} reports the cost-correctness trade-off across the three primary conditions.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Cost per problem (mean $\pm$ stdev). Wallclock includes LLM and sandbox time. \texttt{calls} is the count of LLM invocations.}
 \label{tab:cost}
 \centering
@@ -518,7 +518,7 @@ A multi-agent workflow with retries is necessarily more expensive than a one-sho
 \subsection{Per-Agent Ablation}
 Table~\ref{tab:ablation} disables one agent at a time, measuring the marginal contribution of the Planner, Reviewer, Optimizer, and the retrieval layer.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Per-agent ablation on internal-30 (3 trials per cell). Each row removes one component from \textbf{multi-full}; \texttt{rag-on} adds retrieval (off in the default \textbf{multi-full}).}
 \label{tab:ablation}
 \centering
@@ -529,7 +529,7 @@ Table~\ref{tab:ablation} disables one agent at a time, measuring the marginal co
 \subsection{Retry-Budget Sweep}
 Peer-review point T4 asks whether more retries would yield further improvement. Table~\ref{tab:retry_sweep} reports pass-rate, average retries used, and mean wallclock as the retry budget varies over $\{0, 2\}$ (budgets at $\{0,2\}$ span the practically interesting range; $\{1,3\}$ were omitted for compute-budget reasons and are deferred to future work).
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Retry-budget sweep on internal-30, condition \textbf{multi-full}.}
 \label{tab:retry_sweep}
 \centering
@@ -549,7 +549,7 @@ Peer-review point T4 asks whether more retries would yield further improvement. 
 \subsection{External Validity: HumanEval and APPS-Introductory}
 Table~\ref{tab:external} anchors the framework against public benchmarks. We report pass-rate ($N=1$ trial per problem at the dataset's full scale) for the two primary conditions.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{HumanEval (164 problems) and APPS-introductory (50-problem subset) pass-rate.}
 \label{tab:external}
 \centering
@@ -560,7 +560,7 @@ Table~\ref{tab:external} anchors the framework against public benchmarks. We rep
 \subsection{Cross-Model Generalization}
 To address peer-review point W2 we run \textbf{multi-full} and \textbf{single-oneshot} with a second base model (DeepSeek-Coder-V2-Lite-Instruct, 16B MoE with 2.4B active parameters \cite{deepseekv2coder}). Table~\ref{tab:crossmodel} reports the result on internal-30 (3 trials per condition).
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Cross-model generalization on internal-30 (3 trials).}
 \label{tab:crossmodel}
 \centering
@@ -571,18 +571,18 @@ To address peer-review point W2 we run \textbf{multi-full} and \textbf{single-on
 \subsection{Error-Class Taxonomy}
 Table~\ref{tab:errortax} reports the distribution of \texttt{error\_class} values over the failed trials of each condition on internal-30, addressing peer-review point T5.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Error-class distribution among failed trials (\%) on internal-30.}
 \label{tab:errortax}
 \centering
 \input{tables/tab11_errortax}
 \end{table}
 
-\FloatBarrier
+\clearpage
 \subsection{Latest-2026 Supplementary Comparison}
 Table~\ref{tab:latest2026} reports a small-sample evaluation against the May 2026 strongest open-weight code model that fits the reference hardware (Qwen3-Coder-30B-A3B-Instruct, MoE with 3.3\,B active parameters). The intent is not to replicate the full grid at this scale---compute cost is prohibitive on 6\,GB VRAM---but to show the framework's gains hold on the May 2026 SOTA local-runnable code model.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Supplementary: Qwen3-Coder-30B-A3B on a 10-problem stratified subset of internal-30 (1 trial). Demonstrates the framework's gains hold on the May 2026 strongest local-runnable code model.}
 \label{tab:latest2026}
 \centering
@@ -590,10 +590,10 @@ Table~\ref{tab:latest2026} reports a small-sample evaluation against the May 202
 \end{table}
 
 \FloatBarrier
-\subsection{Test-Source Bias Check}
+\subsection{Test-Source Bias Check}%
 Peer-review point T2 asks whether LLM-generated tests inflate apparent accuracy. Table~\ref{tab:testsource} reports the test-generation path for every condition across all three benchmarks. Every trial record shows \texttt{test\_source = deterministic}: all 30 internal-30 problems, all 64 sampled HumanEval problems, and all 50 APPS-introductory problems have deterministic test suites embedded in the harness. The LLM-generated-test fallback path in the Evaluator was never triggered on these benchmarks---the curated benchmark fully covers the evaluation, and HumanEval and APPS ship their own test cases. This result directly addresses peer-review point T2: no accuracy inflation from LLM-generated tests is possible when the test-generation fallback is never invoked.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Pass-rate split by test source across all benchmarks and conditions. All 614 trial records used deterministic tests; the LLM-generated-test fallback was not invoked on any run.}
 \label{tab:testsource}
 \centering
@@ -609,7 +609,7 @@ Peer-review point T2 asks whether LLM-generated tests inflate apparent accuracy.
 \subsection{Statistical Significance: What the Data Do and Do Not Support}
 Across all internal-30 problems ($n{=}30$, paired by problem), none of the three pairwise comparisons between conditions reaches the conventional $\alpha=0.05$ threshold (Table~\ref{tab:paired_stats}). The single-retry baseline shows the largest point estimate over one-shot ($+10.0$\,pp, $p{=}0.083$, McNemar $p{=}0.25$) but its 95\% bootstrap confidence interval touches zero. Multi-full versus one-shot has a positive point estimate ($+3.3$\,pp) but a confidence interval that spans both directions ($[-10.0, +17.3]$\,pp), and multi-full versus single-retry has a negative point estimate ($-6.7$\,pp) with a similarly wide interval ($[-19.3, +6.0]$\,pp). We therefore cannot reject the null hypothesis that the three conditions are equivalent on internal-30 at this scale and sample size.
 
-\begin{table}[!htbp]
+\begin{table}[!t]
 \caption{Paired comparisons on internal-30 ($n{=}30$ problems). All three pairwise differences fail to reach $\alpha=0.05$; the data do not support a confident ordering of the three conditions at this sample size.}
 \label{tab:paired_stats}
 \centering
