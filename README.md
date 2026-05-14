@@ -158,12 +158,13 @@ CI on GitHub Actions runs the lint + unit-test surface on every push.
 - A. Jothi Prabha (corresponding author) — Kakatiya Institute of Technology and Science, Warangal
 - L. Sai Deekshith — Kakatiya Institute of Technology and Science, Warangal
 - Rohith Reddy Bellibatlu — Independent Researcher
+- G. Suganeshwari — Vellore Institute of Technology, Chennai
 
 ---
 
 ## Citing
 
-If you use this code or framework, please cite the paper. A `CITATION.cff` will be added once the paper has a DOI.
+If you use this code or framework, please cite the paper. See [`CITATION.cff`](CITATION.cff) for machine-readable citation metadata; the DOI will be added once the paper is assigned one by IEEE Access.
 
 ---
 
