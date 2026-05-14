@@ -290,7 +290,7 @@ To make the data flow concrete, Listing~\ref{lst:trace} shows the actual artifac
 
 \begin{figure}[t]
 \begin{lstlisting}[caption={Per-agent trace for the \texttt{topo\_sort} problem (truncated for space). Acceptance is decided by the Evaluator's \texttt{passed:true}; the Reviewer's verdict is recorded but not consulted.},label={lst:trace}]
-[PLANNER] (qwen3:4b-instruct-2507)
+[PLANNER] (qwen2.5-coder:7b-instruct)
   Category    : Graph
   Algorithm   : Kahn's algorithm (BFS topological sort)
   Steps       : build adj list -> compute indegrees ->
@@ -370,17 +370,17 @@ A curated suite of 30 problems spanning dynamic programming (10), graph algorith
   & \texttt{lis}              & Longest increasing subsequence \\
   & \texttt{rod\_cutting}     & Rod-cutting maximum profit \\
   & \texttt{matrix\_chain}    & Matrix-chain multiplication \\
-  & \texttt{subset\_sum}      & Boolean subset-sum \\
+  & \texttt{subset\_sum}$^\dagger$ & Boolean subset-sum (APPS) \\
 \midrule
 \multirow{10}{*}{Graph Algorithms}
-  & \texttt{topo\_sort}$^\dagger$        & Topological sort (APPS) \\
+  & \texttt{topo\_sort}       & Topological sort \\
   & \texttt{cycle\_detect}    & Directed-graph cycle detection \\
   & \texttt{bfs}              & Breadth-first search \\
   & \texttt{dfs}              & Depth-first search \\
   & \texttt{dijkstra}         & Single-source shortest path \\
   & \texttt{bellman\_ford}    & SSSP with negative edges \\
   & \texttt{connected\_components} & Undirected CC count \\
-  & \texttt{scc}$^\dagger$             & Strongly connected components (APPS) \\
+  & \texttt{scc}              & Strongly connected components \\
   & \texttt{unweighted\_shortest} & Unweighted BFS shortest path \\
   & \texttt{grid\_shortest\_path}$^\dagger$ & Grid BFS shortest path (APPS) \\
 \midrule
@@ -394,13 +394,13 @@ A curated suite of 30 problems spanning dynamic programming (10), graph algorith
   & \texttt{heapify}          & In-place heapify \\
   & \texttt{avl}              & AVL tree insert/balance \\
   & \texttt{adj\_list\_construct} & Adjacency list construction \\
-  & \texttt{valid\_parentheses} & Balanced-bracket check \\
+  & \texttt{valid\_parentheses}$^\dagger$ & Balanced-bracket check (APPS) \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
 \paragraph{HumanEval.}
-The 164 problems of HumanEval \cite{chen2021codex}, used to anchor external validity. We use the official tests verbatim through the sandbox.
+We sample 64 problems from HumanEval's 164-problem test set \cite{chen2021codex}, used to anchor external validity. We use the official tests verbatim through the sandbox.
 
 \paragraph{APPS-introductory subset.}
 A 50-problem subset of the APPS-introductory partition \cite{hendrycks2021apps}, drawn from the test split with a fixed seed for reproducibility. Test cases are taken from the dataset.
@@ -421,7 +421,7 @@ We use three open-weight LLMs spanning two vendor families, all locally hosted v
 
 \begin{itemize}
   \item \textbf{Primary backbone (headline numbers):} \texttt{qwen2.5-coder:7b-instruct-q4\_K\_M} \cite{hui2024qwen25coder} for all five agents. We selected a 7\,B-class dense code model for the headline grid because it fits entirely in 6\,GB VRAM with comfortable KV-cache headroom, requiring no RAM offload, and yields \textasciitilde30--80\,s per multi-full trial on the reference hardware. This makes the full E1+E4+E5+E2+E3+E7 grid feasible inside a \textasciitilde7-hour wall-clock budget. The Planner / Reviewer / Explainer are run at temperature $0.2$; the Generator and Optimizer at temperature $0.0$.
-  \item \textbf{Cross-model condition (independent vendor):} \texttt{deepseek-coder-v2:16b-lite-instruct-q4\_K\_M} \cite{deepseekv2coder} from DeepSeek-AI --- a 16B Mixture-of-Experts model with 2.4B active parameters. We initially evaluated OpenAI's \texttt{gpt-oss:20b} \cite{gptoss} as the cross-model candidate, but at 20B dense parameters its inference latency under 6\,GB-VRAM offload (\textasciitilde600\,s per multi-full trial) made the full cross-model grid infeasible inside our compute budget; we therefore use DeepSeek-Coder-V2-Lite, which gives equivalent vendor diversity at materially higher throughput. This condition isolates the framework's gains from any single-vendor effect.
+  \item \textbf{Cross-model condition (independent vendor):} \nolinkurl{deepseek-coder-v2:16b-lite-instruct-q4_K_M} \cite{deepseekv2coder} from DeepSeek-AI --- a 16B Mixture-of-Experts model with 2.4B active parameters. We initially evaluated OpenAI's \texttt{gpt-oss:20b} \cite{gptoss} as the cross-model candidate, but at 20B dense parameters its inference latency under 6\,GB-VRAM offload (\textasciitilde600\,s per multi-full trial) made the full cross-model grid infeasible inside our compute budget; we therefore use DeepSeek-Coder-V2-Lite, which gives equivalent vendor diversity at materially higher throughput. This condition isolates the framework's gains from any single-vendor effect.
   \item \textbf{Latest-2026 supplementary:} \texttt{qwen3-coder:30b-a3b-q4\_K\_M} \cite{qwen3coder} --- the strongest agentic-code-tuned open-weight model that runs on the reference hardware as of May 2026. Mixture-of-Experts with 30\,B total parameters but only 3.3\,B active per token; \textasciitilde13\,GB of weights spill to system RAM, yielding \textasciitilde270\,s per multi-full trial. Reported on a 10-problem stratified subset of internal-30 in the supplementary E9 row, demonstrating that the framework's gains hold on the May 2026 SOTA local-runnable code model without absorbing the compute cost of a full grid at that scale.
 \end{itemize}
 
@@ -472,7 +472,7 @@ Table~\ref{tab:problem_level} reports per-problem pass-rate (mean over $N=5$ tri
 \end{table}
 
 \begin{table}[!t]
-\caption{Category-level pass-rate (\%, mean $\pm$ 95\% bootstrap CI over per-problem trial means). $p$-values are paired Wilcoxon signed-rank tests against single-oneshot.}
+\caption{Category-level pass-rate (\%, mean $\pm$ 95\% bootstrap CI over per-problem trial means) on internal-30. $p$-values are paired Wilcoxon signed-rank tests against single-oneshot. HumanEval and APPS-introductory results are in Table~\ref{tab:external}.}
 \label{tab:category}
 \centering
 \input{tables/tab4_category}
@@ -492,7 +492,7 @@ Table~\ref{tab:problem_level} reports per-problem pass-rate (mean over $N=5$ tri
 Table~\ref{tab:failure} reports the rate of executions that ended in any error class other than \texttt{wrong\_answer} (i.e. crashes, timeouts, syntax errors, sandbox violations). This is a stricter signal than overall pass-rate because it measures whether the generated artifact even runs.
 
 \begin{table}[!t]
-\caption{Execution-failure rate (\%): trials whose error\_class $\notin \{\texttt{none}, \texttt{wrong\_answer}\}$. Lower is better.}
+\caption{Execution-failure rate (\%) on internal-30: trials whose error\_class $\notin \{\texttt{none}, \texttt{wrong\_answer}\}$. Lower is better.}
 \label{tab:failure}
 \centering
 \input{tables/tab5_failure}
@@ -549,55 +549,51 @@ Peer-review point T4 asks whether more retries would yield further improvement. 
 \label{fig:retry_convergence}
 \end{figure}
 
-\FloatBarrier
 \subsection{External Validity: HumanEval and APPS-Introductory}
 Table~\ref{tab:external} anchors the framework against public benchmarks. We report pass-rate ($N=1$ trial per problem at the dataset's full scale) for the two primary conditions.
 
-\begin{table}[!t]
-\caption{HumanEval (164 problems) and APPS-introductory (50-problem subset) pass-rate.}
+\begin{table}[!ht]
+\caption{HumanEval (64 sampled from 164) and APPS-introductory (50-problem subset) pass-rate.}
 \label{tab:external}
 \centering
 \input{tables/tab9_external}
 \end{table}
 
-\FloatBarrier
 \subsection{Cross-Model Generalization}
 To address peer-review point W2 we run \textbf{multi-full} and \textbf{single-oneshot} with a second base model (DeepSeek-Coder-V2-Lite-Instruct, 16B MoE with 2.4B active parameters \cite{deepseekv2coder}). Table~\ref{tab:crossmodel} reports the result on internal-30 (3 trials per condition).
 
-\begin{table}[!t]
+\begin{table}[!ht]
 \caption{Cross-model generalization on internal-30 (3 trials).}
 \label{tab:crossmodel}
 \centering
 \input{tables/tab10_crossmodel}
 \end{table}
 
-\FloatBarrier
 \subsection{Error-Class Taxonomy}
 Table~\ref{tab:errortax} reports the distribution of \texttt{error\_class} values over the failed trials of each condition on internal-30, addressing peer-review point T5.
 
-\begin{table}[!t]
+\begin{table}[!ht]
 \caption{Error-class distribution among failed trials (\%) on internal-30.}
 \label{tab:errortax}
 \centering
 \input{tables/tab11_errortax}
 \end{table}
 
-\clearpage
+\FloatBarrier
 \subsection{Latest-2026 Supplementary Comparison}
 Table~\ref{tab:latest2026} reports a small-sample evaluation against the May 2026 strongest open-weight code model that fits the reference hardware (Qwen3-Coder-30B-A3B-Instruct, MoE with 3.3\,B active parameters). The intent is not to replicate the full grid at this scale---compute cost is prohibitive on 6\,GB VRAM---but to show the framework's gains hold on the May 2026 SOTA local-runnable code model.
 
-\begin{table}[!t]
+\begin{table}[!ht]
 \caption{Supplementary: Qwen3-Coder-30B-A3B on a 10-problem stratified subset of internal-30 (1 trial). Demonstrates the framework's gains hold on the May 2026 strongest local-runnable code model.}
 \label{tab:latest2026}
 \centering
 \input{tables/tab13_latest2026}
 \end{table}
 
-\FloatBarrier
 \subsection{Test-Source Bias Check}%
 Peer-review point T2 asks whether LLM-generated tests inflate apparent accuracy. Table~\ref{tab:testsource} reports the test-generation path for every condition across all three benchmarks. Every trial record shows \texttt{test\_source = deterministic}: all 30 internal-30 problems, all 64 sampled HumanEval problems, and all 50 APPS-introductory problems have deterministic test suites embedded in the harness. The LLM-generated-test fallback path in the Evaluator was never triggered on these benchmarks---the curated benchmark fully covers the evaluation, and HumanEval and APPS ship their own test cases. This result directly addresses peer-review point T2: no accuracy inflation from LLM-generated tests is possible when the test-generation fallback is never invoked.
 
-\begin{table}[!t]
+\begin{table}[!ht]
 \caption{Pass-rate split by test source across all benchmarks and conditions. All 614 trial records used deterministic tests; the LLM-generated-test fallback was not invoked on any run.}
 \label{tab:testsource}
 \centering
@@ -617,14 +613,14 @@ Across all internal-30 problems ($n{=}30$, paired by problem), none of the three
 \caption{Paired comparisons on internal-30 ($n{=}30$ problems). All three pairwise differences fail to reach $\alpha=0.05$; the data do not support a confident ordering of the three conditions at this sample size.}
 \label{tab:paired_stats}
 \centering
-\small
-\begin{tabular}{@{}lrrcc@{}}
+\footnotesize
+\begin{tabular}{@{}lrrlr@{}}
 \toprule
-Comparison (b $-$ a) & $n$ & Mean $\Delta$\,(pp) & Bootstrap 95\,\% CI & Wilcoxon $p$ \\
+Comparison (b\,$-$\,a) & $n$ & $\Delta$\,(pp) & 95\% Bootstrap CI & Wilcoxon $p$ \\
 \midrule
-SR $-$ SO & 30 & $+10.0$ & $[\phantom{-}0.0, +23.3]$ & 0.083 \\
-MF $-$ SO & 30 & $+3.3$  & $[-10.0, +17.3]$ & 0.592 \\
-MF $-$ SR & 30 & $-6.7$  & $[-19.3, +6.0]$  & 0.312 \\
+SR $-$ SO & 30 & $+10.0$ & $[\phantom{+}0.0,\;+23.3]$ & 0.083 \\
+MF $-$ SO & 30 & $+3.3$  & $[-10.0,\;+17.3]$          & 0.592 \\
+MF $-$ SR & 30 & $-6.7$  & $[-19.3,\;+6.0]$           & 0.312 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -691,7 +687,7 @@ The code repository accompanying this paper is structured so that every result t
 
 \paragraph{Software environment.} Python 3.11, dependencies pinned in \texttt{pyproject.toml}. A \texttt{Dockerfile} is provided that builds a container with all dependencies including a CUDA-enabled PyTorch wheel and a pre-pulled Ollama model set. The container is independent of the user's local Ollama installation.
 
-\paragraph{Models.} Local Ollama, with the following digests recorded in \texttt{REPRODUCIBILITY.md}: \texttt{qwen2.5:7b-instruct-q4\_K\_M}, \texttt{qwen2.5-coder:7b-instruct-q4\_K\_M}, and (for cross-model) \texttt{deepseek-coder-v2:16b-lite-instruct-q4\_K\_M}.
+\paragraph{Models.} Local Ollama, with the following digests recorded in \texttt{REPRODUCIBILITY.md}: \texttt{qwen2.5:7b-instruct-q4\_K\_M}, \texttt{qwen2.5-coder:7b-instruct-q4\_K\_M}, and (for cross-model) \nolinkurl{deepseek-coder-v2:16b-lite-instruct-q4_K_M}.
 
 \paragraph{Seeds.} Seeds $\{0, \ldots, N-1\}$ are passed through to the LLM backend (where supported by the model server), to the LLM-test sampler, and to the trial-runner's iteration order.
 
